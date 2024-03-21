@@ -21,7 +21,7 @@ Point = namedtuple('Point', ['x', 'y'])
 class Fruit:
     def __init__(self, window, snake_x, snake_y):
         self.window = window
-        self.snake_x = snake_x
+        self.snake_x = snake_x  # TODO: Remove these and pass zip(self.snake_x, self.snake_y)
         self.snake_y = snake_y
         self.x = None
         self.y = None
@@ -50,7 +50,7 @@ class Snake:
     def __init__(self, window, length):
         self.window = window
         self.length = length
-        self.x = [300] * length
+        self.x = [300] * length # Starting x and y coordinates for the snake
         self.y = [300] * length
         self.direction = "right"  # Default starting direction
 
@@ -104,7 +104,7 @@ class Snake:
         directions = ["right", "down", "left", "up"]  # Clockwise so we can make turns easier below
         idx = directions.index(self.direction)
 
-        # Change the direction based on the action
+        # Change the direction based on the action                          # FIXME: AI input, move to a different function
         match action:
             case [1, 0, 0]:  # Continue in same direction
                 self.direction = directions[idx]
@@ -115,6 +115,8 @@ class Snake:
             case [0, 0, 1]:  # Make a left turn
                 self.direction = directions[(idx - 1) % 4]
                 #print("left")
+            case _:
+                pass # TODO: Human input
 
         for i in range(self.length - 1, 0, -1):  # shift blocks when direction is changed
             self.x[i] = self.x[i - 1]
@@ -135,37 +137,31 @@ class Snake:
 
 class Game:
     def __init__(self):
-        self.running = True
-        self.force_quit = False
+        self.init_game()
+
+    def init_game(self):
+        """Initializes the game's main components."""
         pygame.init()
         self.window = pygame.display.set_mode((width, height))
         pygame.display.set_caption("Snake")
         self.clock = pygame.time.Clock()
-        self.score = 0
+        self.reset_game_state()    
 
-        # For the AI
-        self.fruit = None
-        self.snake = None
-        self.frame_iteration = None
-        self.reward = 0
-        self.dist_to_fruit = math.inf
-        self.reset()
-
-    def reset(self):
+    def reset_game_state(self):
+        """Resets the game state to start a new game or replay."""
         self.snake = Snake(self.window, 1)
         self.fruit = Fruit(self.window, self.snake.x, self.snake.y)
-        self.frame_iteration = 0
         self.score = 0
+        self.frame_iteration = 0
         self.running = True
+        self.force_quit = False
+        self.reward = 0
+        self.dist_to_fruit = math.inf
 
     def distance(self):
         fruit = (self.fruit.x, self.fruit.y)
         snake = (self.snake.x[0], self.snake.y[0])
         dis = round(math.dist(snake, fruit))
-        return dis
-
-    def nearest_wall(self): # TODO
-        dis = 0
         return dis
 
     def display_score(self):
@@ -174,8 +170,51 @@ class Game:
         score = font.render(f"SCORE: {self.score}", True, (200, 200, 200))
         self.window.blit(score, (0, 0))
 
+    def handle_events(self):
+        """Handles events such as key presses and window closing."""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+                self.force_quit = True
+            elif event.type == pygame.KEYDOWN:
+                self.handle_keydown(event.key)
+
+    def handle_keydown(self, key):
+        """Handles key presses."""
+        match key:
+            case pygame.K_UP:
+                self.snake.move_U()
+            case pygame.K_DOWN:
+                self.snake.move_D()
+            case pygame.K_LEFT:
+                self.snake.move_L()
+            case pygame.K_RIGHT:
+                self.snake.move_R()
+            case pygame.K_ESCAPE:
+                # self.running = False
+                self.force_quit = True
+    
+    def update_game_state(self, action):
+        """Updates the game state based on the action taken."""
+        self.snake.slither(action)
+        self.fruit.spawn()
+        self.display_score()
+        pygame.display.update()
+    
+    def snake_ate_fruit(self):
+        """Checks if the snake has eaten a fruit."""
+        return self.snake.x[0] == self.fruit.x and self.snake.y[0] == self.fruit.y
+    
+    def process_ate_fruit(self):
+        """Processes the snake eating a fruit by increasing the score, length, and moving the fruit."""
+        self.reward = 50
+        self.dist_to_fruit = math.inf
+        self.score += 1
+        self.snake.grow()  # Add a block to the snake
+        self.fruit.move()
+
     def collision(self, pt=None):
-        """Checks if two objects collided."""
+        """Checks if the snake has collided with anything. If pt is not None, it checks if the point is in the snake's body."""
         if pt is None:  # points to snake
             pt = Point(self.snake.x[0], self.snake.y[0])
         snake = list(zip(self.snake.x, self.snake.y))  # Makes a temporary coordinate list for the snake
@@ -183,43 +222,28 @@ class Game:
         print(head)
 
         if (pt.x > width - block) or (pt.x < 0) or (pt.y < 0) or (pt.y > height - block):
-            return 1
-        if head in snake[1:]:
-            return 1
+            print("Hit wall")
+            return True
+        if head in snake[1:]:   # Check if the head collided with the body TODO: Change to a set for faster lookup and make separate function
+            print("Hit snake")
+            return True
         return False
+    
+    def process_collision(self):
+        """Processes the snake colliding with something."""
+        print("Hit wall or snake")
+        self.reward = -50
+        self.running = False
 
     def play(self, action):
         """Starts running the base of the game and allows for key presses."""
         self.frame_iteration += 1
 
-        for event in pygame.event.get():
-            match event.type:
-                case pygame.QUIT:
-                    print("Quitting")
-                    self.running = False
+        self.handle_events()
+#
+        ## print(f"FRAME: {self.frame_iteration}\t LENGTH: {self.snake.length}")
 
-        # HUMAN---------------------------------------------------------------HUMAN
-                case pygame.KEYDOWN:
-                    match event.key:
-                        case pygame.K_UP:
-                            self.snake.move_U()
-                        case pygame.K_DOWN:
-                            self.snake.move_D()
-                        case pygame.K_LEFT:
-                            self.snake.move_L()
-                        case pygame.K_RIGHT:
-                            self.snake.move_R()
-                        case pygame.K_ESCAPE:
-                            # self.running = False
-                            self.force_quit = True
-        # HUMAN---------------------------------------------------------------HUMAN
-
-        # print(f"FRAME: {self.frame_iteration}\t LENGTH: {self.snake.length}")
-
-        self.snake.slither(action)
-        self.fruit.spawn()
-        self.display_score()
-        pygame.display.update()
+        self.update_game_state(action)
 
         self.reward = 0
 
@@ -233,21 +257,11 @@ class Game:
         self.dist_to_fruit = dis
         #print(self.dist_to_fruit, self.reward)
 
-        # Check if the snake hit anything
-        match self.collision():
-            case 1:  # 1 - Game over
-                print("Hit wall or snake")
-                self.reward = -50
-                self.running = False
+        if self.collision():
+            self.process_collision()
 
-        # Check if snake ate a fruit
-        match self.snake.x[0] == self.fruit.x and self.snake.y[0] == self.fruit.y:
-            case True:
-                self.reward = 50
-                self.dist_to_fruit = math.inf
-                self.score += 1
-                self.snake.grow()  # Add a block to the snake
-                self.fruit.move()
+        if self.snake_ate_fruit():
+            self.process_ate_fruit()
 
         # End game after a certain amount of time
         match self.frame_iteration > 100 * self.snake.length:  # Game ends after 100 * snake_length frames
