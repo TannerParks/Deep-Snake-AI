@@ -5,6 +5,8 @@ import random
 from math import dist
 import numpy as np
 
+import Human.HumanController as HumanController
+
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
@@ -27,7 +29,7 @@ class Fruit:
         self.y = None
         self.move()
 
-    def spawn(self):
+    def draw_fruit(self):
         """Draws the fruit on the board."""
         pygame.draw.rect(self.window, RED, [self.x, self.y, BLOCK, BLOCK])
         #print(self.snake.x, self.snake.y)
@@ -56,37 +58,21 @@ class Snake:
         self.y = [START_Y] * length
         self.direction = "right"  # Default starting direction
 
-    def move_U(self):
-        """Move up. Action prevented if you're moving down."""
-        match self.direction:
-            case "down":
-                pass
-            case _:
-                self.direction = "up"
+    def move_up(self):
+        if self.direction != "down":
+            self.direction = "up"
 
-    def move_D(self):
-        """Move down. Action prevented if you're moving up."""
-        match self.direction:
-            case "up":
-                pass
-            case _:
-                self.direction = "down"
+    def move_down(self):
+        if self.direction != "up":
+            self.direction = "down"
 
-    def move_L(self):
-        """Move left. Action prevented if you're moving right."""
-        match self.direction:
-            case "right":
-                pass
-            case _:
-                self.direction = "left"
+    def move_left(self):
+        if self.direction != "right":
+            self.direction = "left"
 
-    def move_R(self):
-        """Move right. Action prevented if you're moving left."""
-        match self.direction:
-            case "left":
-                pass
-            case _:
-                self.direction = "right"
+    def move_right(self):
+        if self.direction != "left":
+            self.direction = "right"
 
     def grow(self):
         """Increases the length of the snake by one."""
@@ -94,7 +80,7 @@ class Snake:
         self.x.append(0)  # Appends new set of (x, y) coords to corresponding lists
         self.y.append(0)
 
-    def draw(self):
+    def draw_snake(self):
         """Draws the snake."""
         self.window.fill(BLACK)
         for i in range(self.length):
@@ -134,8 +120,6 @@ class Snake:
             case "right":
                 self.x[0] += BLOCK
 
-        self.draw()
-
 
 class Game:
     def __init__(self):
@@ -158,9 +142,8 @@ class Game:
         self.running = True
         self.force_quit = False
         self.reward = 0
-        self.dist_to_fruit = math.inf
 
-    def distance(self):
+    def distance(self): # TODO: Make this distance(snake, object) so the AI can check how close it is to multiple things
         fruit = (self.fruit.x, self.fruit.y)
         snake = (self.snake.x[0], self.snake.y[0])
         dis = round(math.dist(snake, fruit))
@@ -185,13 +168,13 @@ class Game:
         """Handles key presses."""
         match key:
             case pygame.K_UP:
-                self.snake.move_U()
+                self.snake.move_up()
             case pygame.K_DOWN:
-                self.snake.move_D()
+                self.snake.move_down()
             case pygame.K_LEFT:
-                self.snake.move_L()
+                self.snake.move_left()
             case pygame.K_RIGHT:
-                self.snake.move_R()
+                self.snake.move_right()
             case pygame.K_ESCAPE:
                 # self.running = False
                 self.force_quit = True
@@ -199,7 +182,8 @@ class Game:
     def update_game_state(self, action):
         """Updates the game state based on the action taken."""
         self.snake.slither(action)
-        self.fruit.spawn()
+        self.snake.draw_snake()
+        self.fruit.draw_fruit()
         self.display_score()
         pygame.display.update()
     
@@ -215,7 +199,7 @@ class Game:
         self.snake.grow()  # Add a block to the snake
         self.fruit.move()
         
-    def collision(self):
+    def collision(self):    # FIXME: Needs a point so the AI can check for collisions on next move
         """Checks if the snake has collided with anything by making a set of the snake's body and checking if the head is in it or 
         checking if the head is out of bounds"""
         head = Point(self.snake.x[0], self.snake.y[0])
@@ -244,29 +228,16 @@ class Game:
         """Starts running the base of the game and allows for key presses."""
         self.frame_iteration += 1
         self.handle_events()
-#
-        ## print(f"FRAME: {self.frame_iteration}\t LENGTH: {self.snake.length}")
-
         self.update_game_state(action)
 
-        self.reward = 0
-
-        # Check if distance to fruit has decreased
-        dis = self.distance()
-        match dis <= self.dist_to_fruit:
-            #case True:
-            #    self.reward = 1
-            case False:
-                self.reward = -1
-        self.dist_to_fruit = dis
-        #print(self.dist_to_fruit, self.reward)
-
+        # Check for collisions and if the snake ate a fruit
         if self.collision():
             self.process_collision()
         if self.snake_ate_fruit():
             self.process_ate_fruit()
             
-        self.took_too_long()    # End game after a certain amount of time to encourage faster solutions
+        # End game after a certain amount of time to encourage faster solutions
+        self.took_too_long()
 
         self.clock.tick(SPEED)
         #print(self.reward)
