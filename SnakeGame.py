@@ -140,17 +140,20 @@ class Game:
         self.window = pygame.display.set_mode((WIDTH, HEIGHT))
         pygame.display.set_caption("Snake")
         self.clock = pygame.time.Clock()
-        self.reset_game_state()    
+        self.reset()    
 
-    def reset_game_state(self):
-        """Resets the game state to start a new game or replay."""
+    def reset(self):
+        """Resets the game to start a new game or replay."""
         self.snake = Snake(self.window, 1)
         self.fruit = Fruit(self.window, self.snake)
         self.score = 0
         self.frame_iteration = 0
         self.running = True
         self.force_quit = False
+        self.state = self.get_state()               # Still testing FIXME
         self.reward = 0
+
+        return self.state
 
     def distance(self): # TODO: Make this distance(snake, object) so the AI can check how close it is to multiple things
         fruit = (self.fruit.x, self.fruit.y)
@@ -224,10 +227,10 @@ class Game:
         snake_body = set(zip(self.snake.x[1:], self.snake.y[1:]))
 
         if (point.x > WIDTH - BLOCK_SIZE) or (point.x < 0) or (point.y < 0) or (point.y > HEIGHT - BLOCK_SIZE):
-            print("Hit wall")
+            #print("Hit wall")
             return 1
         if point in snake_body:
-            print("Hit snake")
+            #print("Hit snake")
             return 1
         return 0
     
@@ -241,9 +244,52 @@ class Game:
         if self.frame_iteration > 100 * self.snake.length:
             print("Took too long")
             self.running = False
+    
+    def get_state(self):
+        """Get the current state of the game like the position of the snake, the position of the food, etc."""
+        # Get points around the snake's head
+        pt_up = Point(self.snake.x[0], self.snake.y[0] - BLOCK_SIZE)
+        pt_down = Point(self.snake.x[0], self.snake.y[0] + BLOCK_SIZE)
+        pt_left = Point(self.snake.x[0] - BLOCK_SIZE, self.snake.y[0])
+        pt_right = Point(self.snake.x[0] + BLOCK_SIZE, self.snake.y[0])
+
+        state = [
+            # Danger straight
+            (self.snake.direction == "right" and self.collision(pt_right)) or
+            (self.snake.direction == "left" and self.collision(pt_left)) or
+            (self.snake.direction == "up" and self.collision(pt_up)) or
+            (self.snake.direction == "down" and self.collision(pt_down)),
+
+            # Danger right
+            (self.snake.direction == "up" and self.collision(pt_right)) or
+            (self.snake.direction == "down" and self.collision(pt_left)) or
+            (self.snake.direction == "left" and self.collision(pt_up)) or
+            (self.snake.direction == "right" and self.collision(pt_down)),
+
+            # Danger left
+            (self.snake.direction == "down" and self.collision(pt_right)) or
+            (self.snake.direction == "up" and self.collision(pt_left)) or
+            (self.snake.direction == "right" and self.collision(pt_up)) or
+            (self.snake.direction == "left" and self.collision(pt_down)),
+
+            # Direction
+            self.snake.direction == "left",
+            self.snake.direction == "right",
+            self.snake.direction == "up",
+            self.snake.direction == "down",
+
+            # Fruit direction
+            self.fruit.x < self.snake.x[0], # Left
+            self.fruit.x > self.snake.x[0], # Right
+            self.fruit.y < self.snake.y[0], # Up
+            self.fruit.y > self.snake.y[0],  # Down
+        ]
+
+        return np.array(state)
 
     def play(self, action=None):
         """Starts running the base of the game and allows for key presses."""
+        assert self.state is not None, "Call reset before using step method."   # TODO: Remove this line
         self.frame_iteration += 1
         self.handle_events()
 
@@ -264,7 +310,10 @@ class Game:
 
         self.clock.tick(SPEED)
 
-        return self.reward, self.running, self.score
+        # Update the state based on the new game state
+        self.state = self.get_state()
+
+        return self.state, self.reward, self.running, self.score
 
 
 if __name__ == "__main__":
