@@ -20,8 +20,8 @@ class Agent:
         self.games_played = 0
 
         # Initialize both policy and target networks
-        self.policy_net = DQN(11, 3).to(device)
-        self.target_net = DQN(11, 3).to(device)
+        self.policy_net = DQN(15, 3).to(device)
+        self.target_net = DQN(15, 3).to(device)
 
         # Create the Trainer, which includes the optimizer and loss function
         self.trainer = Trainer(self.policy_net, self.target_net, device, gamma=0.9, learning_rate=0.001)
@@ -69,20 +69,18 @@ def train():
     game = Game()
     memory = ReplayMemory(10000)
     graph = Graph()
-    num_games = 100
     BATCH_SIZE = 10
 
-    #if torch.cuda.is_available():
-    #    print("Using GPU")
-    #    num_games = 10  # TODO: Change both num_games to higher numbers
-    #else:
-    #    print("Using CPU")
-    #    num_games = 5
+    if torch.cuda.is_available():
+        print("Using GPU")
+        num_games = 200
+    else:
+        print("Using CPU")
+        num_games = 100
 
 
     for i_game in range(num_games):
         state = game.reset()    # Reset the game and get the start state
-        #state = torch.tensor(state, device=device, dtype=torch.float32).unsqueeze(0)  # Convert the state to a tensor and add a batch dimension
         reward_test = 0  # TODO: DEBUG ONLY
 
         # Play the game until it's over
@@ -109,8 +107,10 @@ def train():
                 #agent.trainer.optimize(memory, len(memory))
             
             # update target network
-            if agent.games_played % 10 == 0:    # FIXME: Idk if this is right yet
-                agent.trainer.update_target()
+            #if agent.games_played % 10 == 0:    # FIXME: Idk if this is right yet
+            #    agent.trainer.update_target()
+            
+            agent.trainer.soft_update_target(0.001)
             
             reward_test += reward    # TODO: DEBUG ONLY
             

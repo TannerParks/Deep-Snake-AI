@@ -4,6 +4,7 @@ import pygame
 import random
 from math import dist
 import numpy as np
+from collections import deque
 
 # Colors
 BLACK = (0, 0, 0)
@@ -11,7 +12,7 @@ RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 
 BLOCK_SIZE = 20  # Size of a block
-SPEED = 100  # Speed of the game
+SPEED = 60  # Speed of the game
 
 WIDTH = 600 # Width and height of the window
 HEIGHT = 600
@@ -156,12 +157,6 @@ class Game:
 
         return self.state
 
-    def distance(self): # TODO: Make this distance(snake, object) so the AI can check how close it is to multiple things
-        fruit = (self.fruit.x, self.fruit.y)
-        snake = (self.snake.x[0], self.snake.y[0])
-        dis = round(math.dist(snake, fruit))
-        return dis
-
     def display_score(self):
         """Displays the number of fruits eaten."""
         font = pygame.font.SysFont("Verdana", 25)
@@ -196,7 +191,7 @@ class Game:
                 #self.force_quit = True
             case pygame.K_SPACE:    # TODO: Just for debugging purposes
                 if SPEED == 20:
-                    SPEED = 5
+                    SPEED = 1
                 else:
                     SPEED = 20
     
@@ -208,6 +203,12 @@ class Game:
         self.fruit.draw_fruit()
         self.display_score()
         pygame.display.update()
+
+    def distance(self): # TODO: Make this distance(snake, object) so the AI can check how close it is to multiple things
+        fruit = (self.fruit.x, self.fruit.y)
+        snake = (self.snake.x[0], self.snake.y[0])
+        dis = round(math.dist(snake, fruit))
+        return dis
     
     def snake_ate_fruit(self):
         """Checks if the snake has eaten a fruit."""
@@ -215,6 +216,7 @@ class Game:
     
     def process_ate_fruit(self):
         """Processes the snake eating a fruit by increasing the score, length, and moving the fruit."""
+        print("Ate fruit")
         self.reward = 50
         self.score += 1
         self.dist_to_fruit = math.inf       # TODO: TESTING PURPOSES
@@ -240,6 +242,49 @@ class Game:
         """Processes the snake colliding with something."""
         self.reward = -50
         self.running = False
+    
+    def flood_fill(self, point=None):
+        """Flood fill algorithm to check if the snake can reach the fruit."""
+        if self.collision():    # Return 0 if the snake is in a collision state
+            return 0
+        
+        if point is None:
+            point = Point(self.snake.x[0], self.snake.y[0]) # Default to the head of the snake
+
+        grid = [[0 for _ in range(WIDTH // BLOCK_SIZE)] for _ in range(HEIGHT // BLOCK_SIZE)]
+        queue = deque([point])
+        accessible_points = 0
+        visited = set()
+
+        # Mark the snake's body on the grid
+        for i in range(self.snake.length):
+            x = self.snake.x[i] // BLOCK_SIZE
+            y = self.snake.y[i] // BLOCK_SIZE
+            grid[y][x] = 1
+
+        while queue:
+            pt = queue.popleft()
+            x = pt.x // BLOCK_SIZE
+            y = pt.y // BLOCK_SIZE
+
+            # Check if the point is out of bounds or if it's already been visited
+            if pt in visited or x < 0 or x >= WIDTH // BLOCK_SIZE or y < 0 or y >= HEIGHT // BLOCK_SIZE or grid[y][x] == 1:
+                continue
+            
+            visited.add(pt)
+            accessible_points += 1
+
+            # Add the points around the current point to the queue
+            queue.append(Point(pt.x + BLOCK_SIZE, pt.y))
+            queue.append(Point(pt.x - BLOCK_SIZE, pt.y))
+            queue.append(Point(pt.x, pt.y + BLOCK_SIZE))
+            queue.append(Point(pt.x, pt.y - BLOCK_SIZE))
+        
+        # Normalize the number of accessible points
+        normalized_accessible_points = accessible_points / (WIDTH * HEIGHT / (BLOCK_SIZE**2))
+            
+        return normalized_accessible_points
+
 
     def took_too_long(self):
         """Made to encourage the AI towards a faster solution."""
@@ -286,15 +331,24 @@ class Game:
             self.fruit.x > self.snake.x[0], # Right
             self.fruit.y < self.snake.y[0], # Up
             self.fruit.y > self.snake.y[0],  # Down
+
+            # Open spaces
+            self.flood_fill(pt_right),
+            self.flood_fill(pt_left),
+            self.flood_fill(pt_up),
+            self.flood_fill(pt_down)
         ]
 
-        return np.array(state, dtype=int)
+        return np.array(state, dtype=float)
 
     def play(self, action=None):
         """Starts running the base of the game and allows for key presses."""
         #assert self.state is not None, "Call reset before using step method."   # TODO: Remove this line
         self.frame_iteration += 1
+        self.reward = 0     # TODO: TESTING
         self.handle_events()
+
+        #game.flood_fill()
 
         # If the AI is playing, it will pass in an action
         if action is not None:
@@ -302,19 +356,19 @@ class Game:
 
         self.update_game_state()
 
+        #### TODO: TESTING ####
+        dis = self.distance() 
+        if dis > self.dist_to_fruit:
+            self.reward = -1
+        #print(f"DtF: {self.dist_to_fruit}\t|\tDistance: {dis}")
+        self.dist_to_fruit = min(dis, self.dist_to_fruit)
+        #### END TESTING ####
+
         # Check for collisions and if the snake ate a fruit
         if self.collision():
             self.process_collision()
         if self.snake_ate_fruit():
             self.process_ate_fruit()
-
-        #### TODO: TESTING ####
-        dis = self.distance()
-        if dis <= self.dist_to_fruit:
-            self.reward = 1
-        #print(f"DtF: {self.dist_to_fruit}\t|\tDistance: {dis}")
-        self.dist_to_fruit = min(dis, self.dist_to_fruit)
-        #### END TESTING ####
 
         # End game after a certain amount of time to encourage faster solutions
         self.took_too_long()   # FIXME: AI only
@@ -323,6 +377,7 @@ class Game:
 
         # Update the state based on the new game state
         self.state = self.get_state()
+        #print(self.state)
 
         return self.state, self.reward, self.running, self.score
 

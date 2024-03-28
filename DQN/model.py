@@ -30,12 +30,19 @@ class Trainer:
         self.criterion = nn.MSELoss()
 
     def update_target(self):
-        """This function updates the target model with the current model's weights."""
+        """Update the target model with the current model's weights."""
         self.target_model.load_state_dict(self.policy_model.state_dict())
         self.target_model.eval()    # Ensure the target model to evaluation mode
 
-    def calculate_loss(self, batch):
-        pass
+    def soft_update_target(self, tau=0.001):
+        """Perform a soft update of the target model by interpolating its weights with the policy model's weights."""
+        target_state_dict = self.target_model.state_dict()
+        policy_state_dict = self.policy_model.state_dict()
+
+        for key in target_state_dict.keys():
+            target_state_dict[key] = tau * policy_state_dict[key] + (1 - tau) * target_state_dict[key]
+        
+        self.target_model.load_state_dict(target_state_dict)
 
     def prepare_batch(self, batch):
         """This function is passed a batch of transitions and converts it to a tensor of states, actions, next states, and rewards."""
@@ -58,30 +65,29 @@ class Trainer:
 
         return states, actions, non_final_next_states, rewards, non_final_mask
 
-
     def optimize(self, memory, batch_size=32):
-        # Transition(state=array([1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0]), action=[1, 0, 0], next_state=None, reward=-50, running=False)
-        # Convert the batch of transitions to a single transition of batches, then to a tensor of states, actions, next states, and rewards
+        """Optimize the Deep Q-Network (DQN) model by updating its weights based on a batch of transitions from the replay memory."""
+        # Sample then Transform the batch of transitions into tensors of states, actions, next states, rewards, and masks
         transitions = memory.sample(batch_size)
         batch = memory.transform(transitions)
         states, actions, non_final_next_states, rewards, non_final_mask = self.prepare_batch(batch)
 
-        # Convert one-hot encoded actions to indices
+        # Convert one-hot encoded actions to indices    [0, 0, 1] -> [2]
         actions_indices = actions.max(1)[1].unsqueeze(-1)
 
+        # Predict the Q values for the current states and gather the Q values for the actions taken
         pred = self.policy_model(states)
-        current_q_values = pred.gather(1, actions_indices)  # FIXME: this is just returning pred?
+        current_q_values = pred.gather(1, actions_indices)
         
         # Calculate the target Q values and make terminal states' Q values 0
         target_q_values = torch.zeros(batch_size, device=self.device)
         target_q_values[non_final_mask] = self.target_model(non_final_next_states).max(1)[0].detach()
 
-        # Calculate the expected Q values and the loss
+        # Calculate the loss between the current Q-values and the expected Q-values
         expected_q_values = rewards + self.gamma * target_q_values  # TODO: unsqueeze(-1) to make shape (batch_size, 1)
         loss = self.criterion(current_q_values, expected_q_values.unsqueeze(-1))
 
-        # Optimize the model
+        # Optimize the model by updating its weights using backpropagation and gradient descent
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-        #print("here")
