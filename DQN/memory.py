@@ -14,7 +14,12 @@ class ReplayMemory(object):
         self.memory.append(Transition(*args))
 
     def sample(self, batch_size):
+        """Sample a batch of transitions"""
         return random.sample(self.memory, batch_size)
+    
+    def transform(self, batch):
+        """Convert a batch of transitions to a single transition of batches"""
+        return Transition(*zip(*batch))
 
     def __len__(self):
         return len(self.memory)

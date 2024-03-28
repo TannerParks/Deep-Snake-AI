@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 
 class DQN(nn.Module):
     def __init__(self, n_observations, n_actions):
@@ -19,21 +20,68 @@ class DQN(nn.Module):
 
 
 class Trainer:
-    def __init__(self, model, target_model, gamma, learning_rate=0.00):
+    def __init__(self, policy_model, target_model, device, gamma, learning_rate=0.00):
         """This is the constructor of the class. It initializes the optimizer and the loss function."""
-        self.model = model
+        self.policy_model = policy_model
         self.target_model = target_model
+        self.device = device
         self.gamma = gamma
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+        self.optimizer = torch.optim.Adam(policy_model.parameters(), lr=learning_rate)
         self.criterion = nn.MSELoss()
 
     def update_target(self):
         """This function updates the target model with the current model's weights."""
-        self.target_model.load_state_dict(self.model.state_dict())
+        self.target_model.load_state_dict(self.policy_model.state_dict())
         self.target_model.eval()    # Ensure the target model to evaluation mode
 
     def calculate_loss(self, batch):
         pass
 
-    def optimize(self, memory, batch):
-        pass
+    def prepare_batch(self, batch):
+        """This function is passed a batch of transitions and converts it to a tensor of states, actions, next states, and rewards."""
+        states = torch.tensor(np.array(batch.state), device=self.device, dtype=torch.float32)       # TODO: Move np.array conversion
+        actions = torch.tensor(batch.action, device=self.device, dtype=torch.long)
+        rewards = torch.tensor(batch.reward, device=self.device, dtype=torch.float32)
+
+        # Process next_states: Filter out None values and convert to tensor
+        non_final_mask = torch.tensor([s is not None for s in batch.next_state], device=self.device, dtype=torch.bool)
+        # Filter out None values, convert the rest to tensor
+        non_final_next_states_list = [s for s in batch.next_state if s is not None]
+        #print(f"non_final_next_states_list: {non_final_next_states_list}")
+
+        # TODO: Needs more testing
+        if len(non_final_next_states_list) > 0:
+            non_final_next_states = torch.tensor(np.array(non_final_next_states_list), dtype=torch.float32, device=self.device) # TODO: Move np.array conversion
+        else:
+            #non_final_next_states = torch.tensor([], dtype=torch.float32, device=self.device)
+            non_final_next_states = torch.empty((0, *batch.state[0].shape), dtype=torch.float32, device=self.device)
+
+        return states, actions, non_final_next_states, rewards, non_final_mask
+
+
+    def optimize(self, memory, batch_size=32):
+        # Transition(state=array([1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0]), action=[1, 0, 0], next_state=None, reward=-50, running=False)
+        # Convert the batch of transitions to a single transition of batches, then to a tensor of states, actions, next states, and rewards
+        transitions = memory.sample(batch_size)
+        batch = memory.transform(transitions)
+        states, actions, non_final_next_states, rewards, non_final_mask = self.prepare_batch(batch)
+
+        # Convert one-hot encoded actions to indices
+        actions_indices = actions.max(1)[1].unsqueeze(-1)
+
+        pred = self.policy_model(states)
+        current_q_values = pred.gather(1, actions_indices)  # FIXME: this is just returning pred?
+        
+        # Calculate the target Q values and make terminal states' Q values 0
+        target_q_values = torch.zeros(batch_size, device=self.device)
+        target_q_values[non_final_mask] = self.target_model(non_final_next_states).max(1)[0].detach()
+
+        # Calculate the expected Q values and the loss
+        expected_q_values = rewards + self.gamma * target_q_values  # TODO: unsqueeze(-1) to make shape (batch_size, 1)
+        loss = self.criterion(current_q_values, expected_q_values.unsqueeze(-1))
+
+        # Optimize the model
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        #print("here")

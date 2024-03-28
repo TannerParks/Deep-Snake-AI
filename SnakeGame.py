@@ -11,7 +11,7 @@ RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 
 BLOCK_SIZE = 20  # Size of a block
-SPEED = 20  # Speed of the game
+SPEED = 100  # Speed of the game
 
 WIDTH = 600 # Width and height of the window
 HEIGHT = 600
@@ -152,6 +152,7 @@ class Game:
         self.force_quit = False
         self.state = self.get_state()               # Still testing FIXME
         self.reward = 0
+        self.dist_to_fruit = math.inf
 
         return self.state
 
@@ -216,6 +217,7 @@ class Game:
         """Processes the snake eating a fruit by increasing the score, length, and moving the fruit."""
         self.reward = 50
         self.score += 1
+        self.dist_to_fruit = math.inf       # TODO: TESTING PURPOSES
         self.snake.grow()  # Add a block to the snake
         self.fruit.move_fruit()
         
@@ -242,6 +244,7 @@ class Game:
     def took_too_long(self):
         """Made to encourage the AI towards a faster solution."""
         if self.frame_iteration > 100 * self.snake.length:
+        #if self.frame_iteration > 9:
             print("Took too long")
             self.running = False
     
@@ -285,11 +288,11 @@ class Game:
             self.fruit.y > self.snake.y[0],  # Down
         ]
 
-        return np.array(state)
+        return np.array(state, dtype=int)
 
     def play(self, action=None):
         """Starts running the base of the game and allows for key presses."""
-        assert self.state is not None, "Call reset before using step method."   # TODO: Remove this line
+        #assert self.state is not None, "Call reset before using step method."   # TODO: Remove this line
         self.frame_iteration += 1
         self.handle_events()
 
@@ -304,9 +307,17 @@ class Game:
             self.process_collision()
         if self.snake_ate_fruit():
             self.process_ate_fruit()
-            
+
+        #### TODO: TESTING ####
+        dis = self.distance()
+        if dis <= self.dist_to_fruit:
+            self.reward = 1
+        #print(f"DtF: {self.dist_to_fruit}\t|\tDistance: {dis}")
+        self.dist_to_fruit = min(dis, self.dist_to_fruit)
+        #### END TESTING ####
+
         # End game after a certain amount of time to encourage faster solutions
-        #self.took_too_long()   # FIXME: AI only
+        self.took_too_long()   # FIXME: AI only
 
         self.clock.tick(SPEED)
 
