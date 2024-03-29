@@ -20,7 +20,7 @@ class DQN(nn.Module):
 
 
 class Trainer:
-    def __init__(self, policy_model, target_model, device, gamma, learning_rate=0.00):
+    def __init__(self, policy_model, target_model, device, gamma, learning_rate=0.001):
         """This is the constructor of the class. It initializes the optimizer and the loss function."""
         self.policy_model = policy_model
         self.target_model = target_model

@@ -12,7 +12,8 @@ RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 
 BLOCK_SIZE = 20  # Size of a block
-SPEED = 60  # Speed of the game
+SPEED = 20  # Speed of the game
+SPEED_LIST = [5, 20, 200, 400]  # List of speeds for the game
 
 WIDTH = 600 # Width and height of the window
 HEIGHT = 600
@@ -178,22 +179,30 @@ class Game:
         """Handles key presses."""
         global SPEED 
         match key:
-            case pygame.K_UP:
+            case pygame.K_UP | pygame.K_w:
                 self.snake.move_up()
-            case pygame.K_DOWN:
+            case pygame.K_DOWN | pygame.K_s:
                 self.snake.move_down()
-            case pygame.K_LEFT:
+            case pygame.K_LEFT | pygame.K_a:
                 self.snake.move_left()
-            case pygame.K_RIGHT:
+            case pygame.K_RIGHT | pygame.K_d:
                 self.snake.move_right()
             case pygame.K_ESCAPE:
                 self.running = False
-                #self.force_quit = True
-            case pygame.K_SPACE:    # TODO: Just for debugging purposes
-                if SPEED == 20:
-                    SPEED = 1
+            case pygame.K_SPACE:            ####### TODO: For debugging purposes #######
+                if SPEED == SPEED_LIST[1]:
+                    SPEED = SPEED_LIST[0]
                 else:
-                    SPEED = 20
+                    SPEED = SPEED_LIST[1]
+                print(f"Speed: {SPEED}")
+            case pygame.K_f:
+                if SPEED == SPEED_LIST[0] or SPEED == SPEED_LIST[1] or SPEED == SPEED_LIST[2]:
+                    SPEED = SPEED_LIST[3]
+                else:
+                    SPEED = SPEED_LIST[2]
+                print(f"Speed: {SPEED}")
+            case pygame.K_e:
+                self.process_ate_fruit()
     
     def update_game_state(self):
         """Updates the game state by moving the snake, drawing the snake and fruit, and displaying the score."""
@@ -216,7 +225,7 @@ class Game:
     
     def process_ate_fruit(self):
         """Processes the snake eating a fruit by increasing the score, length, and moving the fruit."""
-        print("Ate fruit")
+        #print("Ate fruit")
         self.reward = 50
         self.score += 1
         self.dist_to_fruit = math.inf       # TODO: TESTING PURPOSES
@@ -289,8 +298,6 @@ class Game:
     def took_too_long(self):
         """Made to encourage the AI towards a faster solution."""
         if self.frame_iteration > 100 * self.snake.length:
-        #if self.frame_iteration > 9:
-            print("Took too long")
             self.running = False
     
     def get_state(self):
@@ -343,12 +350,9 @@ class Game:
 
     def play(self, action=None):
         """Starts running the base of the game and allows for key presses."""
-        #assert self.state is not None, "Call reset before using step method."   # TODO: Remove this line
         self.frame_iteration += 1
         self.reward = 0     # TODO: TESTING
         self.handle_events()
-
-        #game.flood_fill()
 
         # If the AI is playing, it will pass in an action
         if action is not None:
@@ -377,7 +381,6 @@ class Game:
 
         # Update the state based on the new game state
         self.state = self.get_state()
-        #print(self.state)
 
         return self.state, self.reward, self.running, self.score
 
