@@ -4,7 +4,7 @@ from agent import Agent
 from SnakeGame import Game
 
 def load_model(path, n_observations, n_actions):
-    model = DQN(n_observations, n_actions)
+    model = DQN(n_observations, n_actions).to("cuda")
     model.load_state_dict(torch.load(path, map_location=torch.device('cuda')))
     #model = torch.load(path)
     return model
@@ -12,7 +12,7 @@ def load_model(path, n_observations, n_actions):
 def evaluate():
     agent = Agent()
     game = Game()
-    agent.policy_net = load_model("DQN/models/policy_model.pth", 15, 3)
+    agent.policy_net = load_model("DQN/models/policy_model.pth", 16, 3)
     #agent.policy_net = load_model("DQN/models/policy_model.pth", 15, 3)
     agent.policy_net.eval()
     num_games = 100

@@ -13,32 +13,33 @@ sys.path.append("../Deep-Snake-AI")
 from SnakeGame import Game, Point, BLOCK_SIZE
 from graph import Graph
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+import optuna
+
+#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Agent:
-    def __init__(self): # TODO?: Add parameters to the constructor like device, state_size, action_size, etc.
+    def __init__(self, n_observations=16, n_actions=3, device="cuda",
+                 gamma=0.95, learning_rate=0.001,
+                 epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995):
         self.games_played = 0
+        self.device = device
 
         # Initialize both policy and target networks
-        self.policy_net = DQN(15, 3).to(device)
-        self.target_net = DQN(15, 3).to(device)
+        self.policy_net = DQN(n_observations, n_actions).to(self.device)
+        self.target_net = DQN(n_observations, n_actions).to(self.device)
 
         # Create the Trainer, which includes the optimizer and loss function
-        self.trainer = Trainer(self.policy_net, self.target_net, device, gamma=0.95, learning_rate=0.001)
+        self.trainer = Trainer(self.policy_net, self.target_net, self.device, gamma=gamma, learning_rate=learning_rate)
 
         # Use the Trainer's method to initially update the target network
         self.trainer.update_target()
 
-        self.epsilon = 1.0
-        self.epsilon_min = 0.01 # TODO: Test different values for epsilon_min (0.01, 0.05, 0.1, etc.)
-        self.epsilon_max = 1.0
-        self.epsilon_decay_games = 50 # Number of games to linearly decay epsilon to epsilon_min
-
-        # TODO: Implement adaptive epsilon adjustment
-        self.epsilon_decay = 0.995
-        self.epsilon_adaptive_adjustment = 0.01
-        self.epsilon_improvement_threshold = 1.05   # If the average reward for a game is below this threshold, decrease epsilon
-        self.previous_score = 0
+        # Initialize epsilon for epsilon-greedy policy
+        self.epsilon = epsilon_start
+        self.epsilon_min = epsilon_end
+        self.epsilon_max = epsilon_start
+        self.epsilon_decay = epsilon_decay
+        #self.epsilon_decay_games = 50 # Number of games to linearly decay epsilon to epsilon_min
 
     def update_epsilon_linear(self):
         """Update epsilon based on the number of games played. Linearly decay epsilon to epsilon_min over epsilon_linear_decay games."""
@@ -50,20 +51,8 @@ class Agent:
     
     def update_epsilon_exponential(self):
         """Update epsilon based on the number of games played. Exponentially decay epsilon to epsilon_min."""
-        self.epsilon = self.epsilon_min + (self.epsilon_max - self.epsilon_min) * np.exp(-1. * self.games_played / self.epsilon_decay)
+        self.epsilon = self.epsilon_min + (self.epsilon_max - self.epsilon_min) * np.exp(-1 * self.games_played / self.epsilon_decay)
         self.epsilon = max(self.epsilon_min, self.epsilon)
-    
-    def update_epsilon_adaptive(self, current_score):
-        if current_score > self.previous_score * self.epsilon_improvement_threshold:
-            # Agent is improving, increase epsilon to encourage exploration
-            self.epsilon *= self.epsilon_decay
-        else:
-            # Agent is not improving, decrease epsilon to encourage exploitation
-            self.epsilon += self.epsilon_adaptive_adjustment
-        
-        self.epsilon = max(self.epsilon_min, min(self.epsilon, self.epsilon_max))
-
-        self.previous_score = current_score
 
     def get_action(self, state, use_epsilon=True):
         """Decide whether to take a random action (explore) or the best action according to the current policy (exploit), based on epsilon."""
@@ -72,11 +61,9 @@ class Agent:
         # If the random number is less than epsilon, randomly choose an index to set to 1 (left, right, or straight)
         if use_epsilon and np.random.rand() <= self.epsilon:
             move = random.randint(0, 2)
-            #print(f"random: {move}")
         else:
-            state_tensor = torch.tensor(state, device=device, dtype=torch.float32).unsqueeze(0)  # TODO: dtype might be int instead of float32
+            state_tensor = torch.tensor(state, device=self.device, dtype=torch.float32).unsqueeze(0)  # TODO: dtype might be int instead of float32
             move = self.policy_net(state_tensor).max(1)[1].view(1, 1).item()
-            #print(f"policy: {move}")
 
         action[move] = 1
         
@@ -84,31 +71,26 @@ class Agent:
 
 
 
-def train():
-    agent = Agent()
+def train(agent, num_games):
     game = Game()
-    memory = ReplayMemory(10000)
+    memory = ReplayMemory(50000)
     graph = Graph()
-    BATCH_SIZE = 10
-    #recent_scores = deque(maxlen=5)  # Keep track of the last 5 scores (reward earned in each game)
+    BATCH_SIZE = 32
+    max_score = 0
+    scores = []
+    high_score = 0
 
-    if torch.cuda.is_available():
-        print("Using GPU")
-        num_games = 200
-    else:
-        print("Using CPU")
-        num_games = 100
+    print(f"Using: {agent.device}")
 
     for i_game in range(num_games):
         state = game.reset()    # Reset the game and get the start state
         game_reward = 0        # Keep track of the reward earned in the current game
-        #agent.update_epsilon_adaptive(game_reward)
 
         # Play the game until it's over
         done = False
         while not done:
             #agent.update_epsilon_linear()
-            agent.update_epsilon_exponential()  
+            agent.update_epsilon_exponential()
 
             action = agent.get_action(state)
             next_state, reward, running, score = game.play(action)
@@ -127,17 +109,54 @@ def train():
             if len(memory) >= BATCH_SIZE:
                 agent.trainer.optimize(memory, BATCH_SIZE)
             
-            agent.trainer.soft_update_target(0.001)
+            agent.trainer.soft_update_target(0.001) # TODO: Check if the tau value is correct
             
             game_reward += reward
+            high_score = max(high_score, score)
             
         agent.games_played += 1
-        print(f"reward: {game_reward} on game {i_game}\n")
-        #recent_scores.append(game_reward)
+        max_score = max(max_score, game_reward)
         graph.add_episode(agent.games_played, score)
-    torch.save(agent.policy_net.state_dict(), "DQN/models/policy_model.pth")   # TODO: don't know if this works
+        scores.append(score)
+        print(f"reward: {game_reward} on game {i_game}\n")
+
+    torch.save(agent.policy_net.state_dict(), "DQN/models/policy_model.pth")
+    average = np.mean(scores)
+    print(f"Max score: {max_score}\nHigh score: {high_score}\nAverage: {average}\nMemory: {len(memory)}")
     graph.plot()
-                
+
+    return average
+
+
+def objective(trial):
+    learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
+    gamma = trial.suggest_float("gamma", 0.8, 0.9999, log=True)
+    epsilon_start = trial.suggest_uniform('epsilon_start', 0.8, 1.0)
+    epsilon_end = trial.suggest_uniform('epsilon_end', 0.01, 0.1)
+    epsilon_decay = trial.suggest_loguniform('epsilon_decay', 0.9, 0.999)
+
+    agent = Agent(learning_rate=learning_rate, gamma=gamma, epsilon_start=epsilon_start, epsilon_end=epsilon_end, epsilon_decay=epsilon_decay)
+
+    average = train(agent, 100)
+    return average
+
+def optimize():
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=75)
+
+    print("Number of finished trials: ", len(study.trials))
+
+    print("Best trial:")
+    trial = study.best_trial
+
+    print("Accuracy: {}".format(trial.value))
+    print("Best hyperparameters: {}".format(trial.params))
+
+def main():
+    #best_params = {'learning_rate': 0.0019449287803023538, 'gamma': 0.899902784288163, 'epsilon_start': 0.904971615780917, 'epsilon_end': 0.010039349408417542, 'epsilon_decay': 0.9094681595057748}
+    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    agent = Agent(device=dev)
+    train(agent, 200)
 
 if __name__ == "__main__":
-    train()
+    main()

@@ -46,7 +46,7 @@ class Trainer:
 
     def prepare_batch(self, batch):
         """This function is passed a batch of transitions and converts it to a tensor of states, actions, next states, and rewards."""
-        states = torch.tensor(np.array(batch.state), device=self.device, dtype=torch.float32)       # TODO: Move np.array conversion
+        states = torch.tensor(np.array(batch.state), device=self.device, dtype=torch.float32)
         actions = torch.tensor(batch.action, device=self.device, dtype=torch.long)
         rewards = torch.tensor(batch.reward, device=self.device, dtype=torch.float32)
 
@@ -58,7 +58,7 @@ class Trainer:
 
         # TODO: Needs more testing
         if len(non_final_next_states_list) > 0:
-            non_final_next_states = torch.tensor(np.array(non_final_next_states_list), dtype=torch.float32, device=self.device) # TODO: Move np.array conversion
+            non_final_next_states = torch.tensor(np.array(non_final_next_states_list), dtype=torch.float32, device=self.device)
         else:
             #non_final_next_states = torch.tensor([], dtype=torch.float32, device=self.device)
             non_final_next_states = torch.empty((0, *batch.state[0].shape), dtype=torch.float32, device=self.device)
