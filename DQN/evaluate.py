@@ -1,21 +1,17 @@
-import torch
 from model import DQN
 from agent import Agent
 from SnakeGame import Game
 
-def load_model(path, n_observations, n_actions):
-    model = DQN(n_observations, n_actions).to("cuda")
-    model.load_state_dict(torch.load(path, map_location=torch.device('cuda')))
-    #model = torch.load(path)
-    return model
-
 def evaluate():
     agent = Agent()
-    game = Game()
-    agent.policy_net = load_model("DQN/models/policy_model.pth", 16, 3)
-    #agent.policy_net = load_model("DQN/models/policy_model.pth", 15, 3)
+    game = Game(human=False)
+    agent.policy_net.load("DQN/models/policy_model.pth")
     agent.policy_net.eval()
-    num_games = 100
+
+    rewards = []    # Keep track of the reward earned in each game
+    scores = []    # Keep track of the score earned in each game
+
+    num_games = 10
     for i_game in range(num_games):
         state = game.reset()
         game_reward = 0
@@ -28,7 +24,10 @@ def evaluate():
                 next_state = None
             state = next_state
             game_reward += reward
-        print(f"reward: {game_reward} on game {i_game}\n")
+
+        scores.append(score)
+        rewards.append(game_reward)
+        print(f"Game: {i_game}\tReward: {game_reward}\tScore: {score}")
 
 if __name__ == "__main__":
     evaluate()

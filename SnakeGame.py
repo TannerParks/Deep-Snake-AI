@@ -13,6 +13,13 @@ GREEN = (0, 255, 0)
 
 BLOCK_SIZE = 20  # Size of a block
 SPEED = 20  # Speed of the game
+
+# Speeds for the game
+SPEED_SLOW = 5
+SPEED_SLOWEST = 1
+SPEED_NORMAL = 20
+SPEED_FAST = 800
+
 SPEED_LIST = [5, 20, 400, 800]  # List of speeds for the game
 
 WIDTH = 600 # Width and height of the window
@@ -33,7 +40,6 @@ class Fruit:
     def draw_fruit(self):
         """Draws the fruit on the board."""
         pygame.draw.rect(self.window, RED, [self.x, self.y, BLOCK_SIZE, BLOCK_SIZE])
-        #print(self.snake.x, self.snake.y)
 
     def move_fruit(self):
         """Moves the fruit to a new location. If the location is occupied, move to a new location. This is done by generating a 
@@ -87,11 +93,6 @@ class Snake:
         for i in range(self.length):
             pygame.draw.rect(self.window, BLACK, [self.x[i], self.y[i], BLOCK_SIZE, BLOCK_SIZE])  # Outlines snake segments
             pygame.draw.rect(self.window, GREEN, [self.x[i] + 2, self.y[i] + 2, 16, 16])
-
-    # FIXME: Can remove this function and just call move_snake() or AI_update_direction directly
-    def slither(self, action):
-        self.AI_update_direction(action)
-        self.move_snake()
     
     def AI_update_direction(self, action: list[int]):
         """Updates the direction of the snake based on the action taken."""
@@ -151,9 +152,8 @@ class Game:
         self.reward = 0
         self.prev_dist_to_fruit = self.check_distance_to_fruit()
         self.directional_dangers = self.distance_to_collision(self.snake.direction)
+        self.directional_accessible_areas = self.flood_fill_directional(self.snake.direction)
         self.state = self.get_state()
-
-        #print(self.state)
 
         return self.state
 
@@ -168,11 +168,12 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
-                #self.force_quit = True
             elif event.type == pygame.KEYDOWN:
                 # If the game is being played by a human, handle key presses
                 if self.human:
                     self.handle_keydown(event.key)
+                else:
+                    self.AI_handle_keydown(event.key)
 
     def handle_keydown(self, key):
         """Handles key presses."""
@@ -189,23 +190,43 @@ class Game:
             case pygame.K_ESCAPE:
                 self.running = False
             case pygame.K_SPACE:            ####### TODO: For debugging purposes #######
-                if SPEED == SPEED_LIST[1]:
-                    SPEED = SPEED_LIST[0]
+                if SPEED != SPEED_SLOWEST:
+                    SPEED = SPEED_SLOWEST
                 else:
-                    SPEED = SPEED_LIST[1]
-                print(f"Speed: {SPEED}")
-            case pygame.K_f:
-                if SPEED == SPEED_LIST[0] or SPEED == SPEED_LIST[1] or SPEED == SPEED_LIST[2]:
-                    SPEED = SPEED_LIST[3]
-                else:
-                    SPEED = SPEED_LIST[2]
+                    SPEED = SPEED_NORMAL
                 print(f"Speed: {SPEED}")
             case pygame.K_e:
                 self.process_ate_fruit()
     
+    def AI_handle_keydown(self, key):
+        """Handles key presses available while training the AI."""
+        global SPEED
+        match key:
+            case pygame.K_SPACE:
+                if SPEED != SPEED_SLOWEST:
+                    SPEED = SPEED_SLOWEST
+                else:
+                    SPEED = SPEED_NORMAL
+                print(f"Speed: {SPEED}")
+            case pygame.K_1:
+                if SPEED != SPEED_SLOWEST:
+                    SPEED = SPEED_SLOWEST
+                print(f"Speed: {SPEED}")
+            case pygame.K_2:
+                if SPEED != SPEED_SLOW:
+                    SPEED = SPEED_SLOW
+                print(f"Speed: {SPEED}")
+            case pygame.K_3:
+                if SPEED != SPEED_NORMAL:
+                    SPEED = SPEED_NORMAL
+                print(f"Speed: {SPEED}")
+            case pygame.K_4:
+                if SPEED != SPEED_FAST:
+                    SPEED = SPEED_FAST
+                print(f"Speed: {SPEED}")
+    
     def update_game_state(self):
         """Updates the game state by moving the snake, drawing the snake and fruit, and displaying the score."""
-        #self.snake.slither(action)
         self.snake.move_snake()
         self.snake.draw_snake()
         self.fruit.draw_fruit()
@@ -252,7 +273,7 @@ class Game:
         self.running = False
     
     def flood_fill(self, point=None):
-        """Flood fill algorithm to check if the snake can reach the fruit."""
+        """Flood fill algorithm to find the number of accessible points from a given point."""
         if self.collision():    # Return 0 if the snake is in a collision state
             return 0
         
@@ -293,6 +314,28 @@ class Game:
             
         return normalized_accessible_points
 
+    def flood_fill_directional(self, direction):
+        """Performs a flood fill algorithm in each direction to find the number of accessible points in each direction."""
+        # Mapping relative directions to vector adjustments
+        match direction:
+            case "up":
+                directions = {'straight': (0, -BLOCK_SIZE), 'left': (-BLOCK_SIZE, 0), 'right': (BLOCK_SIZE, 0)}
+            case "down":
+                directions = {'straight': (0, BLOCK_SIZE), 'left': (BLOCK_SIZE, 0), 'right': (-BLOCK_SIZE, 0)}
+            case "left":
+                directions = {'straight': (-BLOCK_SIZE, 0), 'left': (0, BLOCK_SIZE), 'right': (0, -BLOCK_SIZE)}
+            case "right":
+                directions = {'straight': (BLOCK_SIZE, 0), 'left': (0, -BLOCK_SIZE), 'right': (0, BLOCK_SIZE)}
+
+        accessible_points = {"straight": 0, "left": 0, "right": 0}
+
+        for rel_dir, (dx, dy) in directions.items():
+            # Calculate new starting point based on relative direction
+            (x, y) = (self.snake.x[0] + dx, self.snake.y[0] + dy)
+            accessible_points[rel_dir] = self.flood_fill(Point(x, y))
+        
+        return accessible_points
+
     def took_too_long(self):
         """Encourages the AI to find a solution faster by penalizing it for taking too long (time limit is based on the snake's length)"""
         return self.frame_iteration > 100 * self.snake.length
@@ -301,9 +344,9 @@ class Game:
         """Processes the game taking too long."""
         self.running = False
 
-    def distance_to_collision(self, direction):
+    def distance_to_collision(self, rel_dir):
         """Calculates the distance between the snake and possible collisions in each direction."""
-        match direction:
+        match rel_dir:
             case "up":
                 directions = {'straight': (0, -BLOCK_SIZE), 'left': (-BLOCK_SIZE, 0), 'right': (BLOCK_SIZE, 0)}
             case "down":
@@ -315,8 +358,8 @@ class Game:
         
         dangers = {'straight': 0, 'left': 0, 'right': 0}
 
-        for direction, (dx, dy) in directions.items():
-            (x, y) = (self.snake.x[0], self.snake.y[0])
+        for rel_dir, (dx, dy) in directions.items():
+            (x, y) = (self.snake.x[0] + dx, self.snake.y[0] + dy)
             distance = 0
             while self.collision(Point(x, y)) == 0:
                 x += dx
@@ -329,17 +372,54 @@ class Game:
             else:  # Moving vertically
                 max_distance = HEIGHT / BLOCK_SIZE
 
-            dangers[direction] = distance/max_distance
-        
+            dangers[rel_dir] = distance/max_distance
+    
         return dangers
         
+    def get_reward(self):
+        """Get the reward for the current state."""
+        reward = 0
+
+        # Check the distance to the fruit
+        if self.snake_ate_fruit(): 
+            reward += 75
+            self.process_ate_fruit()
+        
+        # Reward the AI for getting closer to the fruit
+        current_dist_to_fruit = self.check_distance_to_fruit()
+        if current_dist_to_fruit > self.prev_dist_to_fruit:
+            reward -= 2
+        else:
+            reward += 2
+        self.prev_dist_to_fruit = current_dist_to_fruit
+
+        # Penalize the AI for getting trapped or by moving headfirst into a wall/body
+        current_accessible_area = self.directional_accessible_areas["straight"]
+        normalized_snake_length = self.snake.length / (WIDTH * HEIGHT / (BLOCK_SIZE**2))
+        if current_accessible_area < normalized_snake_length and normalized_snake_length < 0.5: # If the snake is longer than half the board, it's okay to be trapped
+            reward -= 25
+    
+        # Check for collisions and if the snake ate a fruit
+        if self.collision():
+            reward -= 75
+            self.process_collision()
+
+        # End game after a certain amount of time to encourage faster solutions
+        if self.took_too_long():
+            reward -= 10
+            self.process_took_too_long()
+
+        return reward      
+
     def get_state(self):
         """Get the current state of the game like the position of the snake, the position of the food, etc."""
-        # Get points around the snake's head
-        pt_up = Point(self.snake.x[0], self.snake.y[0] - BLOCK_SIZE)
-        pt_down = Point(self.snake.x[0], self.snake.y[0] + BLOCK_SIZE)
-        pt_left = Point(self.snake.x[0] - BLOCK_SIZE, self.snake.y[0])
-        pt_right = Point(self.snake.x[0] + BLOCK_SIZE, self.snake.y[0])
+
+        # Update the distance to collision and accessible areas
+        self.directional_dangers = self.distance_to_collision(rel_dir=self.snake.direction)
+        self.directional_accessible_areas = self.flood_fill_directional(self.snake.direction)
+
+        # Get the reward for the current state
+        self.reward = self.get_reward() 
 
         state = [
             # Danger Straight
@@ -366,42 +446,16 @@ class Game:
             # Distance from fruit
             self.prev_dist_to_fruit,
 
+            # Size of the normalized snake
+            self.snake.length / (WIDTH * HEIGHT / (BLOCK_SIZE**2)),
+
             # Open spaces
-            self.flood_fill(pt_right),
-            self.flood_fill(pt_left),
-            self.flood_fill(pt_up),
-            self.flood_fill(pt_down)
+            self.directional_accessible_areas["straight"],
+            self.directional_accessible_areas["left"],
+            self.directional_accessible_areas["right"]
         ]
 
         return np.array(state, dtype=float)
-
-    def get_reward(self):
-        """Get the reward for the current state."""
-        reward = 0
-        # Check the distance to the fruit
-        if self.snake_ate_fruit():
-            reward += 50
-            self.process_ate_fruit()
-        
-        # Reward the AI for getting closer to the fruit
-        current_dist_to_fruit = self.check_distance_to_fruit()
-        if current_dist_to_fruit > self.prev_dist_to_fruit:
-            reward -= 1
-        else:
-            reward += 1
-        self.prev_dist_to_fruit = current_dist_to_fruit
-
-        # Check for collisions and if the snake ate a fruit
-        if self.collision():
-            reward -= 50
-            self.process_collision()
-
-        # End game after a certain amount of time to encourage faster solutions
-        if self.took_too_long():
-            reward -= 10
-            self.process_took_too_long()
-
-        return reward      
 
     def play(self, action=None):
         """Starts running the base of the game and allows for key presses."""
@@ -416,15 +470,10 @@ class Game:
         # Update the game state
         self.update_game_state()
 
-        self.directional_dangers = self.distance_to_collision(direction=self.snake.direction)
-
-        # Get the reward for the current state
-        self.reward = self.get_reward()
-
-        self.clock.tick(SPEED)
-
         # Update the state based on the new game state
         self.state = self.get_state()
+
+        self.clock.tick(SPEED)
 
         return self.state, self.reward, self.running, self.score
 
@@ -433,6 +482,5 @@ if __name__ == "__main__":
     game = Game()
     while game.running:
         game.play()
-        #game.reset()
 
     pygame.quit()

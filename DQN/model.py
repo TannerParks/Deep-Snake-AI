@@ -7,9 +7,9 @@ class DQN(nn.Module):
         """This is the constructor of the class. It initializes the layers of the neural network based on the 
         input (state observations) and output (possible actions) dimensions."""
         super(DQN, self).__init__()
-        self.layer1 = nn.Linear(n_observations, 128)
-        self.layer2 = nn.Linear(128, 128)
-        self.layer3 = nn.Linear(128, n_actions)
+        self.layer1 = nn.Linear(n_observations, 256)
+        self.layer2 = nn.Linear(256, 256)
+        self.layer3 = nn.Linear(256, n_actions)
 
     def forward(self, x):
         """This is the forward pass of the neural network. It's called when the model is called with an input tensor."""
@@ -17,7 +17,15 @@ class DQN(nn.Module):
         x = torch.relu(self.layer2(x))
 
         return self.layer3(x)
-
+    
+    def save(self, path):
+        """Save the model's weights to a file."""
+        torch.save(self.state_dict(), path)
+    
+    def load(self, path):
+        """Load the model's weights from a file."""
+        self.load_state_dict(torch.load(path))
+        
 
 class Trainer:
     def __init__(self, policy_model, target_model, device, gamma, learning_rate=0.001):
@@ -54,13 +62,10 @@ class Trainer:
         non_final_mask = torch.tensor([s is not None for s in batch.next_state], device=self.device, dtype=torch.bool)
         # Filter out None values, convert the rest to tensor
         non_final_next_states_list = [s for s in batch.next_state if s is not None]
-        #print(f"non_final_next_states_list: {non_final_next_states_list}")
 
-        # TODO: Needs more testing
         if len(non_final_next_states_list) > 0:
             non_final_next_states = torch.tensor(np.array(non_final_next_states_list), dtype=torch.float32, device=self.device)
         else:
-            #non_final_next_states = torch.tensor([], dtype=torch.float32, device=self.device)
             non_final_next_states = torch.empty((0, *batch.state[0].shape), dtype=torch.float32, device=self.device)
 
         return states, actions, non_final_next_states, rewards, non_final_mask
@@ -84,7 +89,7 @@ class Trainer:
         target_q_values[non_final_mask] = self.target_model(non_final_next_states).max(1)[0].detach()
 
         # Calculate the loss between the current Q-values and the expected Q-values
-        expected_q_values = rewards + self.gamma * target_q_values  # TODO: unsqueeze(-1) to make shape (batch_size, 1)
+        expected_q_values = rewards + self.gamma * target_q_values
         loss = self.criterion(current_q_values, expected_q_values.unsqueeze(-1))
 
         # Optimize the model by updating its weights using backpropagation and gradient descent
