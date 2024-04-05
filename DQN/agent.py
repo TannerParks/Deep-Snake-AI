@@ -36,9 +36,9 @@ class Agent:
         self.epsilon_min = epsilon_end
         self.epsilon_max = epsilon_start
         self.epsilon_decay = epsilon_decay
-        self.performance_threshold = 30
-        self.epsilon_increase_factor = 1.1
-        self.epsilon_decay_rate_after_threshold = 0.999
+        self.epsilon_increase_factor = 1.02
+        self.previous_avg_reward = 0
+        self.epsilon_exploitation_phase = False # Flag to indicate pure exploitation phase
         #self.epsilon_decay_games = 50 # Number of games to linearly decay epsilon to epsilon_min
 
     def update_epsilon_linear(self):
@@ -51,24 +51,28 @@ class Agent:
     
     def update_epsilon_exponential(self):
         """Update epsilon based on the number of games played. Exponentially decay epsilon to epsilon_min."""
-        self.epsilon = self.epsilon_min + (self.epsilon_max - self.epsilon_min) * np.exp(-1 * self.games_played / self.epsilon_decay)
-        self.epsilon = max(self.epsilon_min, self.epsilon)
+        if not self.epsilon_exploitation_phase:
+            #print("Exponential decay")
+            self.epsilon = self.epsilon_min + (self.epsilon_max - self.epsilon_min) * np.exp(-1 * self.games_played / self.epsilon_decay)
+            self.epsilon = max(self.epsilon_min, self.epsilon)
 
-    def update_epsilon_adaptive(self, recent_scores):
-        """Update epsilon based on the recent scores. If the average score is high, decrease epsilon to exploit more."""
-        average_score = np.mean(recent_scores)
-        if average_score < self.performance_threshold:
-            # Performance is below threshold, increase epsilon to encourage exploration
-            self.epsilon = min(self.epsilon * self.epsilon_increase_factor, self.epsilon_max)
+    def update_epsilon_adaptive(self, rewards):
+        recent_avg_reward = np.mean(rewards[-10:])
+        epsilon_threshold = 0.001
+        if recent_avg_reward > self.previous_avg_reward * 1.05:
+            if self.epsilon == 0:
+                self.epsilon = 0.2
+            else:
+                self.epsilon = min(self.epsilon * self.epsilon_increase_factor, self.epsilon_max)
+            print(f"EXPLORATION:\t\t{self.epsilon}")
         else:
-            # Performance meets or exceeds threshold, maintain or further decrease epsilon
-            self.epsilon = max(self.epsilon * self.epsilon_decay_rate_after_threshold, self.epsilon_min)
-
-    def update_epsilon(self, current_episode, recent_scores):
-        if current_episode < 50:
-            self.update_epsilon_exponential()
-        else:
-            self.update_epsilon_adaptive(recent_scores)
+            self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+            #self.update_epsilon_exponential()
+            if self.epsilon < epsilon_threshold:
+                self.epsilon = 0
+            print(f"STANDARD:\t\t{self.epsilon}")
+        
+        self.previous_avg_reward = recent_avg_reward
 
     def get_action(self, state, use_epsilon=True):
         """Decide whether to take a random action (explore) or the best action according to the current policy (exploit), based on epsilon."""
@@ -101,10 +105,12 @@ def train(agent, num_games):
         state = game.reset()    # Reset the game and get the start state
         game_reward = 0        # Keep track of the reward earned in the current game
 
+        #agent.update_epsilon_adaptation(rewards)
+        #agent.update_epsilon_exponential()
+
         # Play the game until it's over
         done = False
         while not done:
-            #agent.update_epsilon_linear()
             agent.update_epsilon_exponential()
 
             action = agent.get_action(state)
@@ -132,7 +138,7 @@ def train(agent, num_games):
         graph.add_episode(agent.games_played, score)
         scores.append(score)
         rewards.append(game_reward)
-        print(f"Game: {i_game}\tReward: {game_reward}\tScore: {score}")
+        print(f"Game: {i_game}\t\t\tScore: {score}\t\t\tReward: {game_reward}\n")
 
     agent.policy_net.save("DQN/models/policy_model.pth")
     average_score = np.mean(scores)
@@ -167,11 +173,11 @@ def optimize():
 
 def main():
     #optimize() # Uncomment to run hyperparameter optimization
-    best_params = {'learning_rate': 0.0006195710574968068, 'gamma': 0.9492156293396277, 'epsilon_start': 0.8248405688064617, 'epsilon_end': 0.010106859326933892, 'epsilon_decay': 0.9165985043791098}
-    best_params2 = {'learning_rate': 0.00036897789293035725, 'gamma': 0.9852852928197687, 'epsilon_start': 0.9940711467016862, 'epsilon_end': 0.010497463030421313, 'epsilon_decay': 0.9788761529718399}
+    best_params1 = {'learning_rate': 0.00036897789293035725, 'gamma': 0.9852852928197687, 'epsilon_start': 0.9940711467016862, 'epsilon_end': 0.010497463030421313, 'epsilon_decay': 0.9788761529718399}
+    best_params2 = {'learning_rate': 0.00036897789293035725, 'gamma': 0.9852852928197687, 'epsilon_start': 0.9940711467016862, 'epsilon_end': 0, 'epsilon_decay': 0.9788761529718399}
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    agent = Agent(**best_params2, device=dev)
-    train(agent, 6)
+    agent = Agent(**best_params1, device=dev)
+    train(agent, 200)
 
 if __name__ == "__main__":
     main()

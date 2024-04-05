@@ -388,17 +388,21 @@ class Game:
         # Reward the AI for getting closer to the fruit
         current_dist_to_fruit = self.check_distance_to_fruit()
         if current_dist_to_fruit > self.prev_dist_to_fruit:
-            reward -= 2
+            reward -= 1
         else:
-            reward += 2
+            reward += 1
         self.prev_dist_to_fruit = current_dist_to_fruit
 
-        # Penalize the AI for getting trapped or by moving headfirst into a wall/body
-        current_accessible_area = self.directional_accessible_areas["straight"]
+        # Apply penalty for being in a tight space except when the snake occupies more than half the board
+        # since in those cases limited maneuvering space is unavoidable due to the snake's length
+        current_accessible_area = max(self.directional_accessible_areas.values())
         normalized_snake_length = self.snake.length / (WIDTH * HEIGHT / (BLOCK_SIZE**2))
-        if current_accessible_area < normalized_snake_length and normalized_snake_length < 0.5: # If the snake is longer than half the board, it's okay to be trapped
-            reward -= 25
-    
+        if 0 < current_accessible_area < normalized_snake_length and normalized_snake_length < 0.5:
+            ratio = current_accessible_area / normalized_snake_length
+            penalty_factor = max(0, 1 - ratio)
+            #print(f"A: {current_accessible_area}\nL: {normalized_snake_length}\nP: {penalty_factor}\nR: {-25 * penalty_factor}\n")
+            reward -= 25 * penalty_factor
+
         # Check for collisions and if the snake ate a fruit
         if self.collision():
             reward -= 75
