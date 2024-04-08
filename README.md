@@ -1,6 +1,6 @@
 # Deep Q-Network for the Snake Game: Project Overview
 
-This project focuses on developing a Deep Q-Network (DQN) AI agent capable of learning and playing the classic Snake game (the game portion I use is a tweaked and heavily decoupled version of a Snake project I did in an Intro to CS class). The goal is to create an intelligent agent that can navigate the game environment, make strategic decisions, and achieve high scores by eating fruits while avoiding collisions. Below is a detailed overview of the project, highlighting key aspects such as state representation, actions, rewards/penalties, and the methodologies employed.
+This project focuses on developing a Deep Q-Network (DQN) AI agent capable of learning and playing the classic Snake game (the game portion I use is a tweaked and heavily decoupled version of a Snake project I did in an Intro to CS class). The goal is to create an intelligent agent that can navigate the game environment, make strategic decisions, and achieve high scores by eating fruits while avoiding collisions. This project also includes a graph in order to help visualize the learning process, and also an evaluation tool to test out any saved models. Below is a detailed overview of the project, highlighting key aspects such as state representation, actions, rewards/penalties, and the methodologies employed.
 
 ## State Representation
 The state representation is foundational to the DQN's decision-making process, encapsulating the game environment at any given moment. It informs the AI agent of its current situation, aiding in determining the next best action. Through experimentation, the project evolved from simple binary matrices to more nuanced continuous values, enhancing the complexity and capability of the neural network. The final state representation includes:
@@ -45,9 +45,7 @@ A critical feedback loop for the AI, rewards, and penalties reinforce desirable 
 * Continuous Improvement: Regular evaluation and adjustment of the state representation, reward system, and exploration strategy based on the AI's performance and learning progress.
 
 ## Conclusion
-This project showcases the intricate balance of designing a state representation that captures essential environmental cues, creating a rewarding system that motivates intelligent behavior, and developing a neural network capable of learning and adapting to the challenges of the Snake game. Through careful experimentation and iterative refinement, the AI agent learns to navigate the game environment with increasing proficiency, demonstrating the potential of DQN in mastering complex tasks.
-
-
+This project showcases the design of a state representation that captures environmental cues, creating a rewarding system that motivates intelligent behavior, and developing a neural network capable of learning and adapting to the challenges of the Snake game. Through careful experimentation and iterative refinement, the AI agent learns to navigate the game environment with increasing proficiency, demonstrating the potential of DQN in mastering complex tasks. An early version of this project with less complex states and rewards would typically start to level off at about a length of 60 when evaluated. The highest I've seen this one react is a length of 250. While that's pretty good for an AI that doesn't have a complete view of the board, I might revisit it at some later date and see how much it can be improved with things like more detailed state representations and a learning curriculum to teach it things like Hamiltonian Paths.
 
 
 
