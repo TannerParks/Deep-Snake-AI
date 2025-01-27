@@ -140,7 +140,7 @@ def train(agent, num_games):
         rewards.append(game_reward)
         print(f"Game: {i_game}\t\t\tScore: {score}\t\t\tReward: {game_reward}\n")
 
-    agent.policy_net.save("DQN/models/policy_model.pth")
+    agent.policy_net.save("./models/policy_model.pth")
     average_score = np.mean(scores)
     print(f"Highest reward: {max(rewards)}\nHighest score: {max(scores)}\nAverage score: {average_score}")
     graph.plot()
@@ -177,7 +177,7 @@ def main():
     best_params2 = {'learning_rate': 0.00036897789293035725, 'gamma': 0.9852852928197687, 'epsilon_start': 0.9940711467016862, 'epsilon_end': 0, 'epsilon_decay': 0.9788761529718399}
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     agent = Agent(**best_params1, device=dev)
-    train(agent, 200)
+    train(agent, 200) # Number of episodes must be at least 10 or an error will occur due to the moving average taking the last ten values
 
 if __name__ == "__main__":
     main()
