@@ -12,7 +12,7 @@ RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 
 BLOCK_SIZE = 20  # Size of a block
-SPEED = 20  # Speed of the game
+SPEED = 100  # Speed of the game
 
 # Speeds for the game
 SPEED_SLOW = 5
@@ -338,7 +338,7 @@ class Game:
 
     def took_too_long(self):
         """Encourages the AI to find a solution faster by penalizing it for taking too long (time limit is based on the snake's length)"""
-        return self.frame_iteration > 100 * self.snake.length
+        return self.frame_iteration > 150 * self.snake.length
     
     def process_took_too_long(self):
         """Processes the game taking too long."""
@@ -380,17 +380,18 @@ class Game:
         """Get the reward for the current state."""
         reward = 0
 
-        # Check the distance to the fruit
+        # Reward the AI for eating the fruit (scaled with its length)
         if self.snake_ate_fruit(): 
-            reward += 75
+            #reward += 150
+            reward += 150 + min(50, 0.15 * self.snake.length)
             self.process_ate_fruit()
         
         # Reward the AI for getting closer to the fruit
         current_dist_to_fruit = self.check_distance_to_fruit()
         if current_dist_to_fruit > self.prev_dist_to_fruit:
-            reward -= 1
+            reward -= 1/(1 + 0.01 * self.snake.length)
         else:
-            reward += 1
+            reward += 1/(1 + 0.01 * self.snake.length)
         self.prev_dist_to_fruit = current_dist_to_fruit
 
         # Apply penalty for being in a tight space except when the snake occupies more than half the board
@@ -400,12 +401,12 @@ class Game:
         if 0 < current_accessible_area < normalized_snake_length and normalized_snake_length < 0.5:
             ratio = current_accessible_area / normalized_snake_length
             penalty_factor = max(0, 1 - ratio)
-            #print(f"A: {current_accessible_area}\nL: {normalized_snake_length}\nP: {penalty_factor}\nR: {-25 * penalty_factor}\n")
-            reward -= 25 * penalty_factor
+            #print(f"A: {current_accessible_area}\nL: {normalized_snake_length}\nP: {penalty_factor}\nR: {-2.5 * penalty_factor}\n")
+            reward -= 2.5 * penalty_factor
 
         # Check for collisions and if the snake ate a fruit
         if self.collision():
-            reward -= 75
+            reward -= 150
             self.process_collision()
 
         # End game after a certain amount of time to encourage faster solutions

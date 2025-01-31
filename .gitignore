@@ -1,1 +1,4 @@
 venv/
+/.idea
+/DQN/__pycache__
+/DQN/__pycache__
