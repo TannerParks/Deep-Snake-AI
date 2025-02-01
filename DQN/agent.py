@@ -190,7 +190,7 @@ def optimize():
 def main():
     #optimize() # Uncomment to run hyperparameter optimization
     best_params1 = {'learning_rate': 0.00036897789293035725, 'gamma': 0.9852852928197687, 'epsilon_start': 0.9940711467016862, 'epsilon_end': 0.010497463030421313, 'epsilon_decay': 0.9788761529718399}
-    best_params2 = {'learning_rate': 0.00036897789293035725, 'gamma': 0.9852852928197687, 'epsilon_start': 0.9940711467016862, 'epsilon_end': 0, 'epsilon_decay': 0.9788761529718399}
+    best_params2 = {'learning_rate': 0.00036897789293035725, 'gamma': 0.9852852928197687, 'epsilon_start': 0.9940711467016862, 'epsilon_end': 0.001, 'epsilon_decay': 0.9788761529718399}
     best_params3 = {'learning_rate': 0.00036897789293035725, 'gamma': 0.9852852928197687, 'epsilon_start': 0.9940711467016862, 'epsilon_end': 0.001, 'epsilon_decay': 150}
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     agent = Agent(**best_params3, device=dev)
