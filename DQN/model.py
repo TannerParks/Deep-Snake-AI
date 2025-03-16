@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+
 class DQN(nn.Module):
     def __init__(self, n_observations, n_actions):
         """This is the constructor of the class. It initializes the layers of the neural network based on the 
@@ -15,7 +16,6 @@ class DQN(nn.Module):
         """This is the forward pass of the neural network. It's called when the model is called with an input tensor."""
         x = torch.relu(self.layer1(x))
         x = torch.relu(self.layer2(x))
-
         return self.layer3(x)
     
     def save(self, path):
@@ -28,19 +28,19 @@ class DQN(nn.Module):
         
 
 class Trainer:
-    def __init__(self, policy_model, target_model, device, gamma, learning_rate=0.001):
+    def __init__(self, policy_model, target_model, device, gamma, learning_rate=0.001, w_decay=0.001):
         """This is the constructor of the class. It initializes the optimizer and the loss function."""
         self.policy_model = policy_model
         self.target_model = target_model
         self.device = device
         self.gamma = gamma
-        self.optimizer = torch.optim.Adam(policy_model.parameters(), lr=learning_rate)
-        self.criterion = nn.MSELoss()
+        self.optimizer = torch.optim.Adam(policy_model.parameters(), lr=learning_rate, weight_decay=w_decay)
+        self.criterion = nn.SmoothL1Loss() # nn.MSELoss()
 
     def update_target(self):
         """Update the target model with the current model's weights."""
         self.target_model.load_state_dict(self.policy_model.state_dict())
-        self.target_model.eval()    # Ensure the target model to evaluation mode
+        self.target_model.eval()    # Set the target model to evaluation mode
 
     def soft_update_target(self, tau=0.001):
         """Perform a soft update of the target model by interpolating its weights with the policy model's weights."""

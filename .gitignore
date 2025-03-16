@@ -2,3 +2,7 @@ venv/
 /.idea
 /DQN/__pycache__
 /DQN/__pycache__
+/DQN/logs
+/logs
+/__pycache__
+/DQN/__pycache__
