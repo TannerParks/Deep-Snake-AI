@@ -1004,17 +1004,21 @@ class Game:
 
         if self.prev_had_escape is not None:
             # 1. Base reward for having an escape route in tight spaces (meant to encourage stalling for an exit)
-            if current_accessible_area < remaining_area and has_escape:     # FIXME: Rewarding in regular play space (why is the ai improving with this)
-                if abs(current_accessible_area - self.prev_accessible_area) <= 1:
-                    self.tight_space_counter += 1
-                else:
-                    self.tight_space_counter = 0
+            #if current_accessible_area < remaining_area and has_escape:     # FIXME: Rewarding in regular play space (why is the ai improving with this)
+            #    if abs(current_accessible_area - self.prev_accessible_area) <= 1:
+            #        self.tight_space_counter += 1
+            #    else:
+            #        self.tight_space_counter = 0
 
-                alpha = 0.1  # tuning parameter for decay rate
-                reward_candidate = 3 * math.exp(-alpha * self.tight_space_counter)
-                escape_reward = max(reward_candidate, 1)
-                print(f"Counter: {self.tight_space_counter}\t\tReward: {escape_reward}")
-                self.debug_info['Escape Tight Space Reward'] = max(reward_candidate, 1)
+            #    alpha = 0.1  # tuning parameter for decay rate
+            #    reward_candidate = 3 * math.exp(-alpha * self.tight_space_counter)
+            #    escape_reward = max(reward_candidate, 1)
+            #    print(f"Counter: {self.tight_space_counter}\t\tReward: {escape_reward}")
+            #    self.debug_info['Escape Tight Space Reward'] = max(reward_candidate, 1)
+            #if abs(current_accessible_area - self.prev_accessible_area) <= 1:       # FIXME: Testing for #3
+            #    self.tight_space_counter += 1
+            #else:
+            #    self.tight_space_counter = 0
 
             # 2. Penalty for losing last escape route
             if self.prev_had_escape and not has_escape:
@@ -1024,7 +1028,7 @@ class Game:
                 self.debug_info['Escape Loss Penalty'] = escape_loss_penalty
 
             # 3. Extra penalty for entering tight space with no escape
-            if in_tight_space and not has_escape and self.tight_space_counter <= 1:
+            if in_tight_space and not has_escape and self.tight_space_counter <= 1: # FIXME: Shouldn't be giving penalty on every tick
                 no_escape_penalty = -10.0 * (1 + normalized_snake_length)
                 escape_reward += no_escape_penalty
                 self.debug_info['No Escape Penalty'] = no_escape_penalty
@@ -1037,15 +1041,6 @@ class Game:
                 self.debug_info["Escape Found Reward"] = escape_found_reward
 
             reward += escape_reward
-
-        # --- Collision Penalty ---
-        #collision_penalty = 0
-        #if self.collision():
-        #    # Collisions become more costly the longer the snake is
-        #    collision_penalty = -130 * (1 + normalized_snake_length)
-        #    reward += collision_penalty
-        #    self.process_collision()
-        #self.debug_info['Collision Penalty'] = collision_penalty
 
         # --- Tail Loop Penalty ---
         # Compute normalized Manhattan distance between head and tail
@@ -1065,9 +1060,11 @@ class Game:
         # Compare to the average fruit capture frame gap and whether there's enough space move from the tail
         tail_loop_penalty = 0
 
-        if avg_fruit_interval > 0 and self.tail_loop_counter > avg_fruit_interval * 0.5 and current_accessible_area > self.tail_distance:
+        if avg_fruit_interval > 0 and self.tail_loop_counter > avg_fruit_interval * 0.4 and current_accessible_area > self.tail_distance:
             tail_loop_penalty = -5 # * ((self.tail_loop_counter - avg_fruit_interval) / self.tail_loop_counter)
             #print(f"PENALTY: {tail_loop_penalty}")
+            #if self.tail_distance == 0 and current_accessible_area > 1: # TODO: TESTING
+            #    tail_loop_penalty *= 2
 
         reward += tail_loop_penalty
         self.debug_info['Tail Loop Penalty'] = tail_loop_penalty
@@ -1085,7 +1082,7 @@ class Game:
 
         if self.took_too_long():
             timeout_penalty = -(1 + 0.002 * over_time)
-            #if self.snake.length <= 10 or self.tail_distance <= 5:
+            #if self.snake.length <= 10 or self.tail_distance <= 3:      # TODO: TESTING
             #    timeout_penalty *= 2
             reward += timeout_penalty
 
@@ -1148,8 +1145,9 @@ class Game:
                 print(f"Loop Counter: {self.tail_loop_counter}")
                 print("=" * 30)
 
-        self.debug_info["Previous Area"] = self.prev_accessible_area if self.prev_accessible_area is not None else current_accessible_area
-        self.debug_info["Current Area"] = current_accessible_area
+        self.debug_info["Area Previous"] = self.prev_accessible_area if self.prev_accessible_area is not None else current_accessible_area
+        self.debug_info["Area Current"] = current_accessible_area
+        self.debug_info["Area Total"] = remaining_area
 
         self.prev_dist_to_fruit = current_dist_to_fruit
         self.prev_accessible_area = current_accessible_area
