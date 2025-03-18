@@ -790,6 +790,27 @@ class Game:
 
         return bonus
 
+    def snake_linearity(self):
+        turns = 0
+
+        if self.snake.length <= 30:
+            min_turns = 0
+        else:
+            min_turns = (self.snake.length - 30) // 30 + 1
+
+        for i in range(1, self.snake.length - 1):
+            prev_segment = (self.snake.x[i - 1] - self.snake.x[i], self.snake.y[i - 1] - self.snake.y[i])
+            next_segment = (self.snake.x[i] - self.snake.x[i + 1], self.snake.y[i] - self.snake.y[i + 1])
+            if prev_segment != next_segment:
+                turns += 1
+        linearity_score = 1 - (turns / max(1, self.snake.length))
+
+        print(f"Turns: {turns}\n"
+              f"Min Turns: {min_turns}\n"
+              f"Linearity: {linearity_score}\n")
+
+        return linearity_score
+
     def get_space_management_reward(self, current_area, current_tail_reachable):
         """Calculate the reward/penalty for space management such as partitions, finding space, going into a tight space, etc."""
         # Skip calculation if no previous area recorded
@@ -876,6 +897,8 @@ class Game:
         normalized_snake_length = self.snake.length / BOARD_NORMALIZE
         self.debug_info = {}    # Reset debug_info on new pass
 
+        self.snake_linearity()
+
         # --- Fruit Reward ---
         # Reward the AI for eating the fruit (scaled with its length)
         avg_fruit_interval = np.mean(np.diff(list(self.recent_fruit_times))) if len(self.recent_fruit_times) >= 2 else 0
@@ -906,9 +929,9 @@ class Game:
         distance_reward = 0
 
         if current_dist_to_fruit > self.prev_dist_to_fruit and access_to_fruit:
-            distance_reward = -1/(1 + 0.01 * self.snake.length)
+            distance_reward = -1 / (1 + 0.01 * self.snake.length)
         elif current_dist_to_fruit < self.prev_dist_to_fruit and access_to_fruit:
-            distance_reward = 1/(1 + 0.01 * self.snake.length)
+            distance_reward = 1 / (1 + 0.01 * self.snake.length)
 
         if has_escape:
             distance_reward *= 2
@@ -936,13 +959,14 @@ class Game:
             # If tail is reachable, apply an extra 1.25x boost for good configurations
             if current_tail_reachable and dense_directions in [1, 2, 3]:
                 organization_reward *= 1.5
-            elif not current_tail_reachable and dense_directions == 4:
+            elif not has_escape and dense_directions == 4:
                 # Penalize if dense in all directions AND no tail access
                 organization_reward = -3 * (1 - density_diff)
+            # TODO: dense_directions == 4 and has_escape
 
             # Scale reward with length since organization matters more for longer snakes
-            if self.snake.length > 100:
-                length_scale = 1 + (np.log2(self.snake.length / 100) / 10) # ~1.0-1.3x multiplier
+            if self.snake.length > 30:
+                length_scale = 1 + (np.log2(self.snake.length / 30) / 15) # ~1.0-1.3x multiplier
                 organization_reward *= length_scale
 
             if in_tight_space: # Encourage density in tight spaces, also discourages spiraling in tight spaces
@@ -976,21 +1000,21 @@ class Game:
             # Reward for consistently having tail access
             if current_tail_reachable:
                 # Reward factor grows with the positive side of tail_access_counter
-                consistency_factor = (1+(self.tail_access_counter / 10))
+                consistency_factor = (1 + (self.tail_access_counter / 10))
                 tail_consistency_reward = base_reward_scale * consistency_factor
             else:
                 # Penalty factor grows with how negative the counter is
-                inaccessible_factor = -(1-(self.tail_access_counter / 10))
+                inaccessible_factor = -(1 - (self.tail_access_counter / 10))
                 tail_consistency_reward = base_reward_scale * inaccessible_factor
 
 
             # 2. Reward for changes in accessibility
             if current_tail_reachable and not self.prev_tail_reachable:
                 # Reward for regaining access (recovery)
-                tail_access_change = base_reward_scale * 2
+                tail_access_change = base_reward_scale * 1.2
             elif not current_tail_reachable and self.prev_tail_reachable:
                 # Significant penalty for losing access
-                tail_access_change = -base_reward_scale * 3
+                tail_access_change = -base_reward_scale * 2
 
             #print(f"Counter: {self.tail_access_counter}\tConsistency: {tail_consistency_reward}\tAccess: {tail_access_change}")
 
@@ -1015,10 +1039,10 @@ class Game:
             #    escape_reward = max(reward_candidate, 1)
             #    print(f"Counter: {self.tight_space_counter}\t\tReward: {escape_reward}")
             #    self.debug_info['Escape Tight Space Reward'] = max(reward_candidate, 1)
-            #if abs(current_accessible_area - self.prev_accessible_area) <= 1:       # FIXME: Testing for #3
-            #    self.tight_space_counter += 1
-            #else:
-            #    self.tight_space_counter = 0
+            if abs(current_accessible_area - self.prev_accessible_area) <= 1:       # FIXME: Testing for #3
+                self.tight_space_counter += 1
+            else:
+                self.tight_space_counter = 0
 
             # 2. Penalty for losing last escape route
             if self.prev_had_escape and not has_escape:
@@ -1047,7 +1071,7 @@ class Game:
         self.tail_distance = self.check_distance_to_tail()
         normalized_tail_distance = self.tail_distance / MANHATTAN_NORMALIZE
         min_length_for_loop = 3
-        tail_loop_threshold = 2  # If the head is within 2 blocks of the tail, consider it a loop event
+        tail_loop_threshold = 3  # If the head is within 3 blocks of the tail, consider it a loop event
 
         # If the head is very close to the tail, increment the loop counter
         if self.tail_distance < tail_loop_threshold and self.snake.length > min_length_for_loop:
@@ -1063,8 +1087,8 @@ class Game:
         if avg_fruit_interval > 0 and self.tail_loop_counter > avg_fruit_interval * 0.4 and current_accessible_area > self.tail_distance:
             tail_loop_penalty = -5 # * ((self.tail_loop_counter - avg_fruit_interval) / self.tail_loop_counter)
             #print(f"PENALTY: {tail_loop_penalty}")
-            #if self.tail_distance == 0 and current_accessible_area > 1: # TODO: TESTING
-            #    tail_loop_penalty *= 2
+            if self.tail_distance == 0 and current_accessible_area > 1: # TODO: TESTING
+                tail_loop_penalty *= 2
 
         reward += tail_loop_penalty
         self.debug_info['Tail Loop Penalty'] = tail_loop_penalty
@@ -1072,8 +1096,11 @@ class Game:
         # --- Head-Tail Slack Reward/Penalty ---        # TODO: TESTING
         #slack_reward = 0
 
-        #if self.tail_distance > self.prev_tail_distance:
+        #if self.tail_distance >= 6:
         #    slack_reward += 1
+        #
+        #reward += slack_reward
+        #self.debug_info['Slack Reward'] = slack_reward
 
         # --- Timeout Penalty ---
         # End game after a certain amount of time to encourage faster solutions
@@ -1082,8 +1109,8 @@ class Game:
 
         if self.took_too_long():
             timeout_penalty = -(1 + 0.002 * over_time)
-            #if self.snake.length <= 10 or self.tail_distance <= 3:      # TODO: TESTING
-            #    timeout_penalty *= 2
+            if self.snake.length <= 10 or self.tail_distance <= 3:      # TODO: TESTING
+                timeout_penalty *= 2
             reward += timeout_penalty
 
             # Force a game over if way past limit
