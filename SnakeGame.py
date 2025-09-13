@@ -4,6 +4,8 @@ import pygame
 import random
 from math import exp
 import numpy as np
+import os
+import time
 from collections import deque
 
 # Colors
@@ -196,8 +198,6 @@ class Game:
         self.score = 0
         self.frame_iteration = 0
         self.games_played = 0
-        self.fruit_direction_changes = 0                    # TODO: Testing
-        self.prev_fruit_direction = None                    # TODO: Testing
         self.recent_fruit_times = deque([], maxlen=20)
         self.dynamic_timeout = 0
         self.running = True
@@ -221,7 +221,10 @@ class Game:
         self.tail_access_counter = None
         self.prev_max_density = None
         self.local_density = None
+        self.excess_turns = None
         self.approach_density = None
+        self.excess_turns = None
+        self.turn_positions = None
         self.state = None
 
         # TODO: Initialize statistics tracking
@@ -251,9 +254,7 @@ class Game:
         self.score = 0
         self.frame_iteration = 0
         self.games_played += 1
-        pygame.display.set_caption(f"Snake Game {self.games_played}      {self.log_file}")
-        self.fruit_direction_changes = 0                    # TODO: Testing
-        self.prev_fruit_direction = None                    # TODO: Testing
+        pygame.display.set_caption(f"Snake Game Hyperparameters2 {self.games_played}      {self.log_file}")
         self.recent_fruit_times.clear()
         self.dynamic_timeout = 250
         self.running = True
@@ -275,7 +276,9 @@ class Game:
         self.local_density = self.get_local_density()
         self.prev_max_density = None
         self.approach_density = None
-        self.update_game_state()
+        self.excess_turns = 0
+        self.turn_positions = []
+        self.update_game_state()            # TODO: Check if updating the game state before getting the state impacts learning
         self.state = self.get_state()
 
         return self.state
@@ -743,6 +746,63 @@ class Game:
 
         return manhattan_dist
 
+    def calculate_approach_space_reward(self, grid):
+        # Calculate the general direction to the fruit
+        dx = (self.fruit.x - self.snake.x[0]) / BLOCK_SIZE
+        dy = (self.fruit.y - self.snake.y[0]) / BLOCK_SIZE
+
+        # Determine primary and secondary directions
+        primary_dir = None
+        secondary_dir = None
+
+        if abs(dx) > abs(dy):
+            primary_dir = (1, 0) if dx > 0 else (-1, 0)
+            secondary_dir = (0, 1) if dy > 0 else (0, -1)
+        else:
+            primary_dir = (0, 1) if dy > 0 else (0, -1)
+            secondary_dir = (1, 0) if dx > 0 else (-1, 0)
+
+        # Check open space in approach cone (primary direction and diagonals)
+        approach_dirs = [
+            primary_dir,
+            (primary_dir[0] + secondary_dir[0], primary_dir[1] + secondary_dir[1]),
+            (primary_dir[0] - secondary_dir[0], primary_dir[1] - secondary_dir[1])
+        ]
+
+        # Count open spaces in the approach cone up to a certain distance
+        search_distance = min(8, max(3, int(self.snake.length * 0.1)))
+        open_approach_cells = 0
+        total_approach_cells = 0
+
+        for dir_x, dir_y in approach_dirs:
+            for dist in range(1, search_distance + 1):
+                check_x = (self.snake.x[0] // BLOCK_SIZE) + dir_x * dist
+                check_y = (self.snake.y[0] // BLOCK_SIZE) + dir_y * dist
+
+                if not (0 <= check_x < 30 and 0 <= check_y < 30):
+                    continue
+
+                total_approach_cells += 1
+                if grid[check_x][check_y] == 0:
+                    open_approach_cells += 1
+
+        print(open_approach_cells)
+
+        # Calculate approach space ratio
+        approach_ratio = open_approach_cells / max(1, total_approach_cells)
+
+        # Reward having open approach space
+        normalized_snake_length = self.snake.length / BOARD_NORMALIZE
+        approach_reward = 0
+
+        # Only reward substantive open space (> 50% of approach cone)
+        if approach_ratio > 0.5:
+            # Reward is higher for longer snakes and better approach ratios
+            approach_reward = 2.0 * (approach_ratio - 0.5) * (1 + normalized_snake_length)
+            self.debug_info['Approach Space Reward'] = approach_reward
+
+        return approach_reward
+
     def get_local_density(self, radius=5):
         """Calculate actual density of snake segments in each direction."""
         densities = {'left': 0, 'right': 0, 'up': 0, 'down': 0}
@@ -791,29 +851,178 @@ class Game:
         return bonus
 
     def snake_linearity(self):
+        """Returns a value to determine how linear the snake is which is calculated using the number of turns for its size."""
+        num_cells = ((HEIGHT // BLOCK_SIZE) + (WIDTH // BLOCK_SIZE)) // 2
+        min_turns = (self.snake.length // num_cells) * 2
         turns = 0
 
-        if self.snake.length <= 30:
-            min_turns = 0
-        else:
-            min_turns = (self.snake.length - 30) // 30 + 1
+        # Track turn positions for better analysis
+        turn_positions = []
 
         for i in range(1, self.snake.length - 1):
             prev_segment = (self.snake.x[i - 1] - self.snake.x[i], self.snake.y[i - 1] - self.snake.y[i])
             next_segment = (self.snake.x[i] - self.snake.x[i + 1], self.snake.y[i] - self.snake.y[i + 1])
             if prev_segment != next_segment:
                 turns += 1
-        linearity_score = 1 - (turns / max(1, self.snake.length))
+                turn_positions.append(i)
 
-        print(f"Turns: {turns}\n"
-              f"Min Turns: {min_turns}\n"
-              f"Linearity: {linearity_score}\n")
+        excess_turns = max(0, turns - min_turns)
 
-        return linearity_score
+        #print(f"Num:   {turns}")
 
-    def get_space_management_reward(self, current_area, current_tail_reachable):
+        #print(f"Turns: {turns}\n"
+        #      f"Cells: {num_cells}\n"
+        #      f"Min Turns: {min_turns}\n"
+        #      f"Excess: {excess_turns}\n"
+        #      f"Turns: {turn_positions}\n"
+        #      f"Evenness: {self._calculate_turn_spacing(turn_positions)}\n")
+
+        return excess_turns, min_turns, turn_positions
+
+    def _calculate_turn_spacing(self, turn_positions):
+        """Evaluate how evenly spaced the turns are."""
+        if len(turn_positions) <= 1:
+            return 1.0  # Perfect spacing if 0 or 1 turn
+
+        spacings = [turn_positions[i + 1] - turn_positions[i] for i in range(len(turn_positions) - 1)]
+        if not spacings:
+            return 1.0
+
+        variance = np.var(spacings)
+        avg_spacing = sum(spacings) / len(spacings)
+
+        # Normalize: lower variance is better (more evenly spaced turns)
+        normalized_variance = min(1.0, variance / (avg_spacing ** 2))
+        evenness_score = 1.0 - normalized_variance
+
+        return evenness_score
+
+    def get_optimal_direction_to_fruit(self):
+        """
+        Use BFS to find the optimal path to the fruit and return which direction
+        (straight, left, right) the snake should move to follow this path.
+
+        Returns:
+            list: A one-hot encoding [straight, left, right] indicating the best direction
+        """
+        start = (self.snake.x[0], self.snake.y[0])
+        goal = (self.fruit.x, self.fruit.y)
+
+        # If fruit not reachable, return no clear direction
+        if not any(self.directional_fruit_reachability.values()):
+            return [0.33, 0.33, 0.33]  # No preferred direction
+
+        # Create a grid copy to use for pathfinding
+        grid_copy = [row[:] for row in self.grid]
+
+        # Calculate valid next positions based on current direction
+        valid_moves = self.get_valid_moves()
+
+        # If no valid moves, return no preference
+        if not valid_moves:
+            return [0.33, 0.33, 0.33]
+
+        # Run BFS from each valid next position to find the shortest path
+        best_direction = None
+        shortest_path_length = float('inf')
+
+        for direction, (nx, ny) in valid_moves.items():
+            path_length = self.bfs_path_length((nx, ny), goal, grid_copy)
+            if path_length < shortest_path_length:
+                shortest_path_length = path_length
+                best_direction = direction
+
+        # Convert to one-hot encoding
+        if best_direction == "straight":
+            return [1, 0, 0]
+        elif best_direction == "left":
+            return [0, 1, 0]
+        elif best_direction == "right":
+            return [0, 0, 1]
+        else:
+            return [0.33, 0.33, 0.33]  # Shouldn't happen
+
+    def get_valid_moves(self):
+        """
+        Calculate the valid moves (straight, left, right) based on current direction.
+        Returns a dictionary mapping direction to (x, y) coordinates.
+        """
+        valid_moves = {}
+
+        # Calculate movement vectors based on current direction
+        if self.snake.direction == "up":
+            directions = {
+                "straight": (0, -BLOCK_SIZE),
+                "left": (-BLOCK_SIZE, 0),
+                "right": (BLOCK_SIZE, 0)
+            }
+        elif self.snake.direction == "right":
+            directions = {
+                "straight": (BLOCK_SIZE, 0),
+                "left": (0, -BLOCK_SIZE),
+                "right": (0, BLOCK_SIZE)
+            }
+        elif self.snake.direction == "down":
+            directions = {
+                "straight": (0, BLOCK_SIZE),
+                "left": (BLOCK_SIZE, 0),
+                "right": (-BLOCK_SIZE, 0)
+            }
+        else:  # left
+            directions = {
+                "straight": (-BLOCK_SIZE, 0),
+                "left": (0, BLOCK_SIZE),
+                "right": (0, -BLOCK_SIZE)
+            }
+
+        # Check which moves are valid
+        head_x, head_y = self.snake.x[0], self.snake.y[0]
+        for direction, (dx, dy) in directions.items():
+            nx, ny = head_x + dx, head_y + dy
+            if not self.collision(Point(nx, ny)):
+                valid_moves[direction] = (nx, ny)
+
+        return valid_moves
+
+    def bfs_path_length(self, start, goal, grid):
+        """
+        Use BFS to find the length of the shortest path from start to goal.
+
+        Args:
+            start: (x, y) starting position
+            goal: (x, y) goal position
+            grid: 2D grid representation of the board
+
+        Returns:
+            int: Length of the shortest path, or inf if no path exists
+        """
+        queue = deque([(start, 0)])  # (position, distance)
+        visited = set([start])
+
+        while queue:
+            (x, y), distance = queue.popleft()
+
+            if (x, y) == goal:
+                return distance
+
+            for dx, dy in [(0, -BLOCK_SIZE), (BLOCK_SIZE, 0), (0, BLOCK_SIZE), (-BLOCK_SIZE, 0)]:
+                nx, ny = x + dx, y + dy
+                grid_x, grid_y = nx // BLOCK_SIZE, ny // BLOCK_SIZE
+
+                # Check if position is valid
+                if (nx, ny) in visited or grid_x < 0 or grid_x >= WIDTH // BLOCK_SIZE or grid_y < 0 or grid_y >= HEIGHT // BLOCK_SIZE:
+                    continue
+
+                visited.add((nx, ny))
+                queue.append(((nx, ny), distance + 1))
+
+        return float('inf')  # No path found
+
+
+    def get_space_management_reward1(self, current_area):
         """Calculate the reward/penalty for space management such as partitions, finding space, going into a tight space, etc."""
         # Skip calculation if no previous area recorded
+        #print(f"\nCurrent: {current_area}\tPrevious: {self.prev_accessible_area}\tAbs: {abs(self.prev_accessible_area - current_area) if self.prev_accessible_area is not None else 0}")
         if self.prev_accessible_area is None or current_area < 1 or abs(current_area - self.prev_accessible_area) <= 1:
             return 0, False
 
@@ -844,8 +1053,8 @@ class Game:
             # Apply a curve to better differentiate between small and large losses
             curved_loss = area_loss_ratio ** 0.4
 
-            # Add space constraint factor (increases penalty when snake had limited space)
-            space_ratio = min(1.0, self.prev_accessible_area / (remaining_space + epsilon))
+            # Add space constraint factor (increases penalty when snake has limited space)
+            space_ratio = min(1.0, self.prev_accessible_area / (remaining_space + epsilon)) # Value should be <1
             space_constraint_factor = 1 + (1 - space_ratio) ** 0.8
 
             # Add a small-partition boost for very small partitions
@@ -855,7 +1064,9 @@ class Game:
             partition_penalty = -max(min_penalty,
                                      base_penalty * curved_loss * length_factor * space_constraint_factor * small_partition_boost)
 
-            self.debug_info["Partition Penalty"] = partition_penalty
+            #print(f"Partition! Current: {current_area}\tPrevious: {self.prev_accessible_area}\tPenalty: {partition_penalty}")
+
+            self.debug_info["Penalty Partition"] = partition_penalty
             space_reward += partition_penalty
 
         # ---Space Recovery Bonus---
@@ -885,7 +1096,170 @@ class Game:
 
                 # Use the smaller of the calculated bonus and the capped value
                 recovery_bonus = min(calculated_bonus, max_recovery_cap)
-                self.debug_info["Space Recovery Bonus"] = recovery_bonus
+                self.debug_info["Reward Space Recovery"] = recovery_bonus
+
+        return space_reward, in_tight_space
+
+    def get_space_management_reward(self, current_area):
+        """Calculate rewards and penalties for space management: partitions, single cells, and space recovery."""
+        # Skip calculation if no previous area recorded or negligible change
+        if self.prev_accessible_area is None or current_area < 1:
+            return 0, False
+
+        # Calculate normalized metrics (used by all calculations)
+        snake_length = self.snake.length
+        remaining_space = BOARD_NORMALIZE - snake_length
+        normalized_snake_length = snake_length / BOARD_NORMALIZE
+        epsilon = 1e-6  # Avoid division by zero
+
+        # Determine if we're in a tight space
+        critical_ratio = 1.5  # Want at least 1.5x snake length in accessible area
+        minimum_desired_area = min(remaining_space, snake_length * critical_ratio)
+        in_tight_space = current_area < minimum_desired_area
+
+        space_reward = 0
+
+        # --- Common parameters for all space penalties ---
+        base_penalty = 12
+        min_penalty = 3
+        length_multiplier = 2
+        constraint_multiplier = 0.4
+
+        # --- Helper function for common scaling calculations ---
+        def calculate_space_factors(area_1, area_2, space_remaining):
+            """Calculate common scaling factors for space-related rewards/penalties."""
+            # Calculate area change ratio
+            area_change_ratio = abs(area_1 - area_2) / max(area_1, 1)
+
+            # Higher lengths = harsher penalties for space management
+            length_factor = 1 + (normalized_snake_length ** 1.5) * length_multiplier
+
+            # Apply a curve to better differentiate between small and large losses
+            curved_change = area_change_ratio ** 0.5
+
+            # Add space constraint factor (increases penalty when snake has limited space)
+            space_ratio = min(1.0, area_1 / (space_remaining + epsilon))
+            space_constraint_factor = 1 + constraint_multiplier * (1 - space_ratio) ** 0.8
+
+            # Boost for minor partitions (
+            small_change_boost = 1.5 if area_change_ratio < 0.1 else 1.0
+
+            return {
+                'change_ratio': area_change_ratio,
+                'curved_change': curved_change,
+                'length_factor': length_factor,
+                'space_ratio': space_ratio,
+                'space_constraint_factor': space_constraint_factor,
+                'small_change_boost': small_change_boost
+            }
+
+        # Track penalties to avoid double-penalizing
+        partition_penalty = 0
+        single_cell_penalty = 0
+
+        # --- PARTITION PENALTY ---
+        if current_area < self.prev_accessible_area and abs(self.prev_accessible_area - current_area) > 1:
+            # Get scaling factors
+            factors = calculate_space_factors(
+                self.prev_accessible_area,
+                current_area,
+                remaining_space
+            )
+
+            # Calculate final penalty with minimum threshold
+            partition_penalty = -max(
+                min_penalty,
+                base_penalty *
+                factors['curved_change'] *
+                factors['length_factor'] *
+                factors['space_constraint_factor'] *
+                factors['small_change_boost']
+            )
+
+            self.debug_info["Penalty Partition"] = partition_penalty
+
+        # --- SINGLE CELL PENALTY ---
+        # Count number of directions with only one cell accessible
+        single_cell_count = sum(1 for area in self.directional_accessible_areas.values() if area == 1)
+
+        if single_cell_count > 0:
+            # Get scaling factors
+            factors = calculate_space_factors(
+                current_area,
+                current_area - single_cell_count,  # Simulate the loss
+                remaining_space
+            )
+
+            # Calculate penalty using same base parameters as partition penalty
+            single_cell_penalty = -max(
+                min_penalty,
+                base_penalty *
+                factors['length_factor'] *
+                factors['space_constraint_factor'] *
+                factors['small_change_boost'] *
+                (single_cell_count / 3)  # Scale by proportion of constrained directions
+            )
+
+            self.debug_info["Penalty Single Cell"] = single_cell_penalty
+
+        # APPLY ONLY THE LARGER PENALTY TO AVOID DOUBLE PENALIZING
+        if partition_penalty != 0 and single_cell_penalty != 0:
+            # If both penalties apply, only use the stronger one
+            if partition_penalty < single_cell_penalty:
+                #print(f"Double - Partition: {partition_penalty}")
+                space_reward += partition_penalty
+            else:
+                #print(f"Double - Single: {single_cell_penalty}")
+                space_reward += single_cell_penalty
+        else:
+            # Apply whichever penalty is non-zero
+            #print(f"Partition: {partition_penalty}") if partition_penalty < 0 else print(f"Single: {single_cell_penalty}")
+            space_reward += partition_penalty + single_cell_penalty
+
+        # --- SPACE RECOVERY BONUS ---
+        if self.prev_accessible_area < minimum_desired_area and current_area > self.prev_accessible_area:
+            recovery_ratio = current_area / max(1, self.prev_accessible_area)
+            significant_recovery = recovery_ratio > 1.2  # 20% improvement threshold
+
+            if significant_recovery:
+                # Get scaling factors by simulating a "reverse" partition
+                factors = calculate_space_factors(
+                    current_area,
+                    self.prev_accessible_area,
+                    remaining_space
+                )
+
+                # Calculate the equivalent penalty for losing this much space
+                equivalent_penalty = max(
+                    min_penalty,
+                    base_penalty *
+                    factors['curved_change'] *
+                    factors['length_factor'] *
+                    factors['space_constraint_factor'] *
+                    factors['small_change_boost']
+                )
+
+                # Cap at 35 for consistency with partition penalty
+                equivalent_penalty = min(35, equivalent_penalty)
+
+                # Apply a 65% cap to ensure recovery is always less than equivalent penalty
+                max_recovery_cap = 0.65 * equivalent_penalty
+
+                # Calculate standard recovery bonus
+                tight_space_factor = max(0.2, min(1.0, self.prev_accessible_area / minimum_desired_area))
+                gain_ratio = min(1.0, (current_area - self.prev_accessible_area) / max(minimum_desired_area - self.prev_accessible_area, 1))
+                curved_gain = gain_ratio ** 0.6  # Using same curve as partition
+                calculated_bonus = 8 * curved_gain * factors['length_factor'] * (tight_space_factor ** 0.5)
+
+                # Use the smaller of the calculated bonus and the capped value
+                recovery_bonus = min(calculated_bonus, max_recovery_cap)
+                #print(f"Recovery: {recovery_bonus}")
+                self.debug_info["Reward Space Recovery"] = recovery_bonus
+                space_reward += recovery_bonus
+
+        #print(f"Frame: {self.frame_iteration}\n"
+        #      f"Space Reward: {space_reward}\n"
+        #      f"Accessible Area: {self.directional_accessible_areas}\n")
 
         return space_reward, in_tight_space
 
@@ -897,7 +1271,7 @@ class Game:
         normalized_snake_length = self.snake.length / BOARD_NORMALIZE
         self.debug_info = {}    # Reset debug_info on new pass
 
-        self.snake_linearity()
+        #self.calculate_approach_space_reward(self.grid)
 
         # --- Fruit Reward ---
         # Reward the AI for eating the fruit (scaled with its length)
@@ -911,13 +1285,22 @@ class Game:
 
             if self.prev_accessible_area is not None and current_accessible_area < self.prev_accessible_area and abs(self.prev_accessible_area - current_accessible_area) > 2:
                 # Risk bonus for partition causing fruits
-                risk_bonus = min(25, 0.25 * self.snake.length)
+                risk_bonus = min(25, 0.05 * self.snake.length)
                 fruit_reward += risk_bonus
-                self.debug_info['Partition Risk Bonus'] = risk_bonus
+                self.debug_info['Reward Partition Risk'] = risk_bonus
 
             reward += fruit_reward
             self.process_ate_fruit()
-        self.debug_info['Fruit Reward'] = fruit_reward
+
+            if self.snake.length >= BOARD_NORMALIZE:
+                # Large reward for winning the game
+                game_won_reward = 200
+                self.debug_info['Reward Game Won'] = game_won_reward
+                reward += game_won_reward
+                print("GAME WON")
+                self.running = False
+
+        self.debug_info['Reward Fruit'] = fruit_reward
 
         # --- Distance Reward ---
         # Reward the AI for getting closer to the fruit
@@ -937,10 +1320,10 @@ class Game:
             distance_reward *= 2
 
         reward += distance_reward
-        self.debug_info['Distance Reward'] = distance_reward
+        self.debug_info['Reward Distance'] = distance_reward
 
         # --- Space Management Rewards/Penalties ---
-        space_reward, in_tight_space = self.get_space_management_reward(current_accessible_area, current_tail_reachable)
+        space_reward, in_tight_space = self.get_space_management_reward1(current_accessible_area)
         reward += space_reward
 
         #print(f"Reward: {space_reward}\n{space_reward_debug}\n")
@@ -974,9 +1357,31 @@ class Game:
                     organization_reward *= 1.5
 
             reward += organization_reward
-            self.debug_info['Organization Reward'] = organization_reward
+            self.debug_info['Reward Organization'] = organization_reward
 
         self.prev_max_density = max_density
+
+        # --- Linearity Reward ---  TODO: TESTING
+        """
+        linearity_reward = 0
+        linearity_length_threshold = 50 # Min length the snake needs to be for this reward
+
+        if self.snake.length >= linearity_length_threshold:
+            # Basic penalty for excess turns
+            turn_penalty_base = -2 * np.log1p(self.excess_turns)
+            length_scale = normalized_snake_length * 3
+
+            # Context adjustment
+            context_factor = 1.0
+            if access_to_fruit:  # Reduce when going for fruit
+                context_factor *= 0.5
+
+            # Combined reward with context
+            linearity_reward = turn_penalty_base * length_scale * context_factor
+            linearity_reward = min(linearity_reward, -35)
+
+            reward += linearity_reward
+            self.debug_info['Linearity Reward'] = linearity_reward"""
 
         # --- Tail Reachability Reward/Penalty ---
         min_length_threshold = 15
@@ -1007,7 +1412,6 @@ class Game:
                 inaccessible_factor = -(1 - (self.tail_access_counter / 10))
                 tail_consistency_reward = base_reward_scale * inaccessible_factor
 
-
             # 2. Reward for changes in accessibility
             if current_tail_reachable and not self.prev_tail_reachable:
                 # Reward for regaining access (recovery)
@@ -1019,57 +1423,42 @@ class Game:
             #print(f"Counter: {self.tail_access_counter}\tConsistency: {tail_consistency_reward}\tAccess: {tail_access_change}")
 
         reward += (tail_access_change + tail_consistency_reward)
-        self.debug_info['Tail Access Reward'] = tail_access_change
-        self.debug_info['Tail Consistency Reward'] = tail_consistency_reward
+        self.debug_info['Reward Tail Access'] = tail_access_change
+        self.debug_info['Reward Tail Consistency'] = tail_consistency_reward
         self.prev_tail_reachable = current_tail_reachable
 
         # --- Escape Route Rewards/Penalties ---
         escape_reward = 0
 
         if self.prev_had_escape is not None:
-            # 1. Base reward for having an escape route in tight spaces (meant to encourage stalling for an exit)
-            #if current_accessible_area < remaining_area and has_escape:     # FIXME: Rewarding in regular play space (why is the ai improving with this)
-            #    if abs(current_accessible_area - self.prev_accessible_area) <= 1:
-            #        self.tight_space_counter += 1
-            #    else:
-            #        self.tight_space_counter = 0
-
-            #    alpha = 0.1  # tuning parameter for decay rate
-            #    reward_candidate = 3 * math.exp(-alpha * self.tight_space_counter)
-            #    escape_reward = max(reward_candidate, 1)
-            #    print(f"Counter: {self.tight_space_counter}\t\tReward: {escape_reward}")
-            #    self.debug_info['Escape Tight Space Reward'] = max(reward_candidate, 1)
-            if abs(current_accessible_area - self.prev_accessible_area) <= 1:       # FIXME: Testing for #3
+            if abs(current_accessible_area - self.prev_accessible_area) <= 1:
                 self.tight_space_counter += 1
             else:
                 self.tight_space_counter = 0
 
             # 2. Penalty for losing last escape route
             if self.prev_had_escape and not has_escape:
-                escape_loss_penalty = -50.0 * (1 + 0.5 * normalized_snake_length)
-                #print("ESCAPE LOSS FOOL")
+                escape_loss_penalty = -50.0 * (1 + normalized_snake_length)
                 escape_reward += escape_loss_penalty
-                self.debug_info['Escape Loss Penalty'] = escape_loss_penalty
+                self.debug_info['Penalty Escape Loss'] = escape_loss_penalty
 
             # 3. Extra penalty for entering tight space with no escape
-            if in_tight_space and not has_escape and self.tight_space_counter <= 1: # FIXME: Shouldn't be giving penalty on every tick
+            if in_tight_space and not has_escape and self.tight_space_counter <= 1:
                 no_escape_penalty = -10.0 * (1 + normalized_snake_length)
                 escape_reward += no_escape_penalty
-                self.debug_info['No Escape Penalty'] = no_escape_penalty
+                self.debug_info['Penalty No Escape'] = no_escape_penalty
 
             # 4. Reward for finding escape (possible since we have an imperfect escape route finder)
             if not self.prev_had_escape and has_escape:
                 escape_found_reward = 20.0 * (1 + normalized_snake_length)
-                #print("ESCAPE FOUND GENIUS")
                 escape_reward += escape_found_reward
-                self.debug_info["Escape Found Reward"] = escape_found_reward
+                self.debug_info["Reward Escape Found"] = escape_found_reward
 
             reward += escape_reward
 
         # --- Tail Loop Penalty ---
         # Compute normalized Manhattan distance between head and tail
         self.tail_distance = self.check_distance_to_tail()
-        normalized_tail_distance = self.tail_distance / MANHATTAN_NORMALIZE
         min_length_for_loop = 3
         tail_loop_threshold = 3  # If the head is within 3 blocks of the tail, consider it a loop event
 
@@ -1087,27 +1476,41 @@ class Game:
         if avg_fruit_interval > 0 and self.tail_loop_counter > avg_fruit_interval * 0.4 and current_accessible_area > self.tail_distance:
             tail_loop_penalty = -5 # * ((self.tail_loop_counter - avg_fruit_interval) / self.tail_loop_counter)
             #print(f"PENALTY: {tail_loop_penalty}")
-            if self.tail_distance == 0 and current_accessible_area > 1: # TODO: TESTING
+            if self.tail_distance == 0 and current_accessible_area > 1: # Discourage being directly behind the tail
                 tail_loop_penalty *= 2
 
         reward += tail_loop_penalty
-        self.debug_info['Tail Loop Penalty'] = tail_loop_penalty
+        self.debug_info['Penalty Tail Loop'] = tail_loop_penalty
 
-        # --- Head-Tail Slack Reward/Penalty ---        # TODO: TESTING
-        #slack_reward = 0
+        # --- Head-Tail Slack Reward/Penalty ---    # TODO: TESTING might need to adjust values
+        """
+        slack_reward = 0
 
-        #if self.tail_distance >= 6:
-        #    slack_reward += 1
-        #
-        #reward += slack_reward
-        #self.debug_info['Slack Reward'] = slack_reward
+        # Get forward accessible area using your relative direction system
+        forward_area = self.directional_accessible_areas["straight"]
+
+        # Calculate the ideal amount of forward space based on remaining board space
+        ideal_forward = max(5, remaining_area * 0.15)  # At least 5 spaces, or 15% of open space
+        forward_ratio = min(1.0, forward_area / ideal_forward)
+
+        # Only reward when board is getting crowded
+        if normalized_snake_length > 0.25:
+            # Scale factor based on how full the board is
+            slack_factor = (normalized_snake_length - 0.25) / 0.75
+
+            # Higher reward for longer snakes in late game with good forward space
+            slack_reward = 6 * forward_ratio * slack_factor * (1 + normalized_snake_length)
+
+        reward += slack_reward
+        self.debug_info['Reward Slack'] = slack_reward"""
 
         # --- Timeout Penalty ---
         # End game after a certain amount of time to encourage faster solutions
         timeout_penalty = 0
         over_time = self.frame_iteration - self.dynamic_timeout
+        took_too_long = self.took_too_long()
 
-        if self.took_too_long():
+        if took_too_long:
             timeout_penalty = -(1 + 0.002 * over_time)
             if self.snake.length <= 10 or self.tail_distance <= 3:      # TODO: TESTING
                 timeout_penalty *= 2
@@ -1117,10 +1520,10 @@ class Game:
             if over_time > 500:
                 #print(f"Overtime exceeded!\t\tFrame Iteration: {self.frame_iteration}\t\tDynamic Timeout: {self.dynamic_timeout}, Length: {self.snake.length}, Score: {self.score}, Reward: {reward}")
                 timeout_terminal_penalty = -130 * (1 + normalized_snake_length)
-                reward += timeout_terminal_penalty  # TODO: Overwrite reward with terminal penalty? (like collision)
-                self.debug_info['Timeout Terminal Penalty'] = timeout_terminal_penalty
+                reward = timeout_terminal_penalty  # TODO: Overwrite reward with terminal penalty? (like collision)
+                self.debug_info['Penalty Timeout Terminal'] = timeout_terminal_penalty
                 self.process_took_too_long()
-        self.debug_info['Timeout Penalty'] = timeout_penalty
+        self.debug_info['Penalty Timeout'] = timeout_penalty
 
         # --- Collision Penalty ---
         collision_penalty = 0
@@ -1129,7 +1532,7 @@ class Game:
             collision_penalty = -130 * (1 + normalized_snake_length)
             reward = collision_penalty  # Overwrite all other rewards and penalties
             self.process_collision()
-        self.debug_info['Collision Penalty'] = collision_penalty
+        self.debug_info['Penalty Collision'] = collision_penalty
 
         if DEBUG:
             # Check if we're near fruit but not getting it
@@ -1139,42 +1542,77 @@ class Game:
             fruit_y = self.fruit.y // BLOCK_SIZE
             manhattan_to_fruit = abs(head_x - fruit_x) + abs(head_y - fruit_y)
 
-            # Count non-zero rewards
-            non_zero_rewards = sum(1 for value in self.debug_info.values() if abs(value) > 0.01)
-            score_magnitude = sum(abs(score) for score in self.debug_info.values())
+            # Filter out only the reward/penalty entries that are numeric.
+            numeric_rewards = {
+                key: value
+                for key, value in self.debug_info.items()
+                if ("Reward" in key or "Penalty" in key) and isinstance(value, (int, float))
+            }
+
+            # Count non-zero rewards from the filtered dictionary.
+            non_zero_rewards = sum(1 for value in numeric_rewards.values() if abs(value) > 0.01)
+            score_magnitude = sum(abs(score) for score in numeric_rewards.values())
 
             # Define interesting conditions to log
             should_log = (
-                    abs(reward) > 10 or  # Large total reward
+                    abs(reward) > 100 or  # Large total reward
+                    took_too_long or
                     non_zero_rewards >= 4 or  # Many active reward components
                     score_magnitude > 15 or
-                    #'Cutoff Penalty' in debug_info or  # Any cutoff penalty
-                    ('Collision Penalty' in self.debug_info and self.debug_info['Collision Penalty'] < 0)  # Collision
-                    #('Fruit Reward' in debug_info and debug_info['Fruit Reward'] > 0)  # Fruit eaten
+                    ('Penalty Collision' in self.debug_info and self.debug_info['Penalty Collision'] < 0)  # Collision
             )
 
+            try:
+                escape_exists = any(self.directional_escape_exists)
+            except IndexError:
+                escape_exists = False
+                # FIXME: Debugging code
+                print(f"ESCAPE INDEX ERROR! "
+                      f"ESCAPE CANDIDATES: {self.directional_escape_candidates}"
+                      f"ESCAPE EXISTS: {self.directional_escape_exists}"
+                      f"ESCAPE TIMES: {self.directional_escape_times}")
+
+            try:
+                last_fruit_time = list(self.recent_fruit_times)[-1]
+            except IndexError:
+                last_fruit_time = 0
+                print(f"No recent fruit times")
+
             if should_log:
-                print("\n====== Reward Breakdown ======")
-                print(f"Move: {self.frame_iteration}\t\tLength: {self.snake.length}")  # Add frame counter if available
-                print(f"Average Fruit Interval: {avg_fruit_interval}")
-                print(f"Time Since Last Fruit: {self.frame_iteration - list(self.recent_fruit_times)[-1]}")
+                title = '=========== Frame Breakdown ==========='
+                print(f"\n{title}")
+                print(f"Move: {self.frame_iteration}\t\tLength: {self.snake.length}")
+                print(f"Reachable: {'Fruit  ' if access_to_fruit else ''}"
+                      f"{'Tail  ' if current_tail_reachable else ''}"
+                      f"{'Escape' if escape_exists else ''}")
+                print(f"Average Fruit Interval: {avg_fruit_interval:.2f}")
+                print(f"Time Since Last Fruit: {self.frame_iteration - last_fruit_time}")
 
-                # Sort rewards by absolute magnitude for easier reading
-                sorted_rewards = sorted(self.debug_info.items(), key=lambda x: abs(x[1]), reverse=True)
-
+                # Sort the numeric rewards by absolute magnitude for easier reading.
+                sorted_rewards = sorted(numeric_rewards.items(), key=lambda x: abs(x[1]), reverse=True)
                 for key, value in sorted_rewards:
                     if abs(value) > 0.01:  # Only print non-zero rewards
                         print(f"{key}: {value:.2f}")
-
                 print(f"Total Reward: {reward:.2f}")
+
+                density_directions = ['left', 'right', 'up', 'down']
+                for direction, density in zip(density_directions, self.local_density):
+                    print(f"{direction} density: {density:.2f}")
+
                 print(f"Accessible Area: {self.prev_accessible_area} → {current_accessible_area}")
+                print(f"Tail Reachable: {current_tail_reachable}")
                 print(f"Tail Distance: {self.tail_distance}")
                 print(f"Loop Counter: {self.tail_loop_counter}")
-                print("=" * 30)
+                print(f"Excess Turns: {self.excess_turns}\tMax: {self.snake.length - 2}")
+                print("=" * len(title))
 
+        # Log additional non-reward/penalty debug information.
         self.debug_info["Area Previous"] = self.prev_accessible_area if self.prev_accessible_area is not None else current_accessible_area
         self.debug_info["Area Current"] = current_accessible_area
         self.debug_info["Area Total"] = remaining_area
+        self.debug_info["Coords Fruit"] = (self.fruit.x, self.fruit.y)
+        self.debug_info["Coords Head"] = (self.snake.x[0], self.snake.y[0])
+        self.debug_info["Reward Total"] = reward
 
         self.prev_dist_to_fruit = current_dist_to_fruit
         self.prev_accessible_area = current_accessible_area
@@ -1193,16 +1631,19 @@ class Game:
          self.directional_escape_times, self.directional_escape_candidates) = self.flood_fill_directional(self.snake.direction)
         self.local_density = self.get_local_density(radius=5)
 
-        max_norm_value = max(20, self.snake.length / 5)
+        #self.excess_turns, min_turns, self.turn_positions = self.snake_linearity()
+        #max_possible_turns = self.snake.length - 2 # Almost every segment could be a turn
+        #normalized_excess = min(1.0, self.excess_turns / max(1, (max_possible_turns - min_turns)))
+        #print(f"Min:   {min_turns}\n"
+        #      f"Max:   {max_possible_turns}\n"
+        #      f"Norm:  {normalized_excess}\n")
+
         escape_time_straight = 0 if not self.directional_escape_exists["straight"] else min(1.0, self.directional_escape_times["straight"] / self.snake.length)
         escape_time_left = 0 if not self.directional_escape_exists["left"] else min(1.0, self.directional_escape_times["left"] / self.snake.length)
         escape_time_right = 0 if not self.directional_escape_exists["right"] else min(1.0, self.directional_escape_times["right"] / self.snake.length)
 
         best_candidate = self.get_nearest_escape(self.directional_escape_times, self.directional_escape_exists, self.directional_escape_candidates)
-        if best_candidate is not None:
-            escape_direction_vector = self.get_escape_direction(best_candidate)
-        else:
-            escape_direction_vector = [0, 0, 0, 0]
+        escape_direction_vector = self.get_escape_direction(best_candidate) if best_candidate is not None else [0, 0, 0, 0]
 
         # TODO: Logging
         # Track area utilization each time we update accessible areas
@@ -1210,6 +1651,8 @@ class Game:
 
         #print(f"Area: {self.directional_accessible_areas}\nTail: {self.directional_tail_reachability}\nFruit: {self.directional_fruit_reachability}\nON FRUIT: {(self.snake.x[0], self.snake.y[0]) == (self.fruit.x, self.fruit.y)}\nTail: {(self.snake.x[-1], self.snake.y[-1])}\nNext Tail: {(self.snake.x[-2], self.snake.y[-2]) if self.snake.length > 1 else None}\n")
         #print(f"Area: {self.directional_accessible_areas}\nTail: {self.directional_tail_reachability}\nFruit: {self.directional_fruit_reachability}\n")
+
+        #print(self.get_optimal_direction_to_fruit())
 
         # Get the reward for the current state
         self.reward = self.get_reward()
@@ -1271,6 +1714,10 @@ class Game:
             escape_time_right,
 
             *escape_direction_vector
+
+            #*self.get_optimal_direction_to_fruit()
+
+            #normalized_excess
         ]
 
         #print(state)
@@ -1302,14 +1749,11 @@ class Game:
     # TODO: Logging
     def generate_log_filename(self):
         """Generate a unique filename for each training session."""
-        import time
         timestamp = time.strftime("%Y%m%d-%H%M%S")  # Format: YYYYMMDD-HHMMSS
         return f"training_log_{timestamp}"
 
     def initialize_stats_logging(self):
         """Initialize the stats logging file with headers."""
-        import os
-
         # Create logs directory if it doesn't exist
         if not os.path.exists('logs'):
             os.makedirs('logs', exist_ok=True)
@@ -1337,7 +1781,8 @@ class Game:
     def track_reward_debug_info(self, debug_info):
         """Track reward components from the last several frames."""
         # Filter out zero rewards for cleaner output
-        filtered_debug_info = {k: v for k, v in debug_info.items() if abs(v) > 0.01}
+        #filtered_debug_info = {k: v for k, v in debug_info.items() if abs(v) > 0.01}
+        filtered_debug_info = {k: v for k, v in debug_info.items() if type(v) is tuple or (type(v) is float or int and abs(v) > 0.01)}
 
         # Add current frame's reward info to buffer
         self.recent_rewards_buffer.append(filtered_debug_info)
@@ -1355,16 +1800,15 @@ class Game:
         items = sorted(rewards_dict.items())
 
         # Format each reward as "key: value"
-        formatted_rewards = [f"{key}: {value:.2f}" for key, value in items]
+        #formatted_rewards = [f"{key}: {value:.2f}" for key, value in items]
+        #formatted_rewards = [f"{key}: {value:.2f}" if isinstance(value, (float)) else f"{key}: {value}" for key, value in items]
+        formatted_rewards = [f"{key}: {value:.2f}" if ("Reward" in key or "Penalty" in key) else f"{key}: {value}" for key, value in items]
 
         # Join with newlines for readability
         return "\n".join(formatted_rewards)
 
     def log_game_stats(self, timeout=False, random_death=False, total_reward=0):
         """Log game statistics to a CSV file after each game, with compact representation of frame rewards."""
-        import numpy as np
-        import os
-
         # Ensure logs directory exists
         os.makedirs('logs', exist_ok=True)
 

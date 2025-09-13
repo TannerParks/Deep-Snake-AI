@@ -56,10 +56,3 @@ class ReplayMemory(object):
 
     def __len__(self):
         return len(self.regular_memory) + len(self.priority_memory)
-
-    def transform(self, batch):
-        """Convert a batch of transitions to a single transition of batches"""
-        return Transition(*zip(*batch))
-
-    def __len__(self):
-        return len(self.regular_memory) + len(self.priority_memory)

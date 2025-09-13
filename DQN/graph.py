@@ -17,7 +17,7 @@ class Graph:
         plt.plot(self.episodes, self.scores, label='Score', alpha=0.5)
         
         # Calculate and plot the moving average
-        window_size = 10  # Adjusted for demonstration purposes
+        window_size = 100  # Adjusted for demonstration purposes
         moving_avg = np.convolve(self.scores, np.ones(window_size)/window_size, mode='valid')
         plt.plot(self.episodes[:len(moving_avg)], moving_avg, label='Moving Average', color='red')
         

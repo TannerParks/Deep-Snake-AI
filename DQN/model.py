@@ -34,7 +34,7 @@ class Trainer:
         self.target_model = target_model
         self.device = device
         self.gamma = gamma
-        self.optimizer = torch.optim.Adam(policy_model.parameters(), lr=learning_rate, weight_decay=w_decay)
+        self.optimizer = torch.optim.AdamW(policy_model.parameters(), lr=learning_rate, weight_decay=w_decay)
         self.criterion = nn.SmoothL1Loss(beta=20.0) # nn.MSELoss()
 
     def update_target(self):
