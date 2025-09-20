@@ -138,7 +138,7 @@ def train(agent, num_games, batch_size, tau=0.001, trial=None):
 
     random_deaths = 0
 
-    #print(f"Current device: {torch.cuda.current_device()}")
+    print(f"Training started for {num_games} games...")
 
     for i_game in range(num_games):
         state = game.reset()  # Reset the game and get the start state
@@ -188,31 +188,38 @@ def train(agent, num_games, batch_size, tau=0.001, trial=None):
         #print(f"Game: {i_game}\t\tScore: {score}\t\tReward: {game_reward:.2f}\t\tMax Score: {max_score}\t\tEpsilon: {agent.epsilon:.5f}\t\tRandom Death: {was_random}\n")
 
         # Optuna Pruning - Report Intermediate Score After every 105 games (Exploitation phases periodically happen in this range too)
-        if trial is not None and i_game >= 100 and i_game % 100 == 5:
+        if i_game >= 100 and i_game % 100 == 5:
             mean_score = np.mean(scores[-100:])  # Last 100 games' average score
             best_scores = sorted(scores, reverse=True)[:50]  # FIXME: OPTUNA - Take top 50 best scores
             avg_top_score = np.mean(best_scores)  # FIXME: OPTUNA
             weighted_score = (0.7 * avg_top_score) + (0.3 * max_score)
 
-            print(
-                f"{Back.LIGHTGREEN_EX}{Fore.BLACK}{Style.BRIGHT}[Optuna Report] Step: {i_game}, Max Score: {max_score}, Mean Last 100: {mean_score}, Max Last 100: {max(scores[-100:])}, Top 50 Mean: {avg_top_score}, Weighted Score: {weighted_score}, Reward: {game_reward}{Style.RESET_ALL}")
-
-            trial.report(weighted_score, i_game)
-
-            if trial.should_prune():
+            if trial is not None:
                 print(
-                    f"{Back.RED}{Fore.BLACK}{Style.BRIGHT}[Optuna] Trial pruned at step {i_game} (Max Score: {max_score}, Mean Last 100: {mean_score}, Max Last 100: {max(scores[-100:])}, Top 50 Mean: {avg_top_score}, Weighted Score: {weighted_score}, Reward: {game_reward}){Style.RESET_ALL}")
-                raise optuna.TrialPruned()
+                    f"{Back.LIGHTGREEN_EX}{Fore.BLACK}{Style.BRIGHT}[Optuna Report] Step: {i_game}, Max Score: {max_score}, Mean Last 100: {mean_score}, Max Last 100: {max(scores[-100:])}, Top 50 Mean: {avg_top_score}, Weighted Score: {weighted_score}, Reward: {game_reward}{Style.RESET_ALL}")
 
-    #agent.policy_net.save("./models/policy_model.pth")  # FIXME: OPTUNA
+                trial.report(weighted_score, i_game)
+
+                if trial.should_prune():
+                    print(
+                        f"{Back.RED}{Fore.BLACK}{Style.BRIGHT}[Optuna] Trial pruned at step {i_game} (Max Score: {max_score}, Mean Last 100: {mean_score}, Max Last 100: {max(scores[-100:])}, Top 50 Mean: {avg_top_score}, Weighted Score: {weighted_score}, Reward: {game_reward}){Style.RESET_ALL}")
+                    raise optuna.TrialPruned()
+            else:
+                print(f"{Back.LIGHTGREEN_EX}{Fore.BLACK}{Style.BRIGHT}[Step Report] Step: {i_game}, Max Score: {max_score}, Mean Last 100: {mean_score}, Max Last 100: {max(scores[-100:])}, Top 50 Mean: {avg_top_score}, Weighted Score: {weighted_score}, Reward: {game_reward}{Style.RESET_ALL}")
+
+    agent.policy_net.save("DQN/models/policy_model.pth")  # FIXME: Comment out for Optuna trials
+    
     average_score = np.mean(scores)
     best_scores = sorted(scores, reverse=True)[:50]  # FIXME: OPTUNA - Take top 50 best scores
     avg_top_score = np.mean(best_scores)  # FIXME: OPTUNA
-    #print(f"Highest reward: {max(rewards)}\nHighest score: {max(scores)}\nAverage score: {average_score}\nDeaths by Random Move: {random_deaths}")
+    weighted_score = (0.7 * avg_top_score) + (0.3 * max_score)
+
+    # Print all values and calculations that would be helpful for evaluating the training session
+    print(f"{Back.MAGENTA}{Fore.BLACK}{Style.BRIGHT}Training completed over {num_games} games.\nHighest Score: {max_score}\nAverage Score: {average_score}\nTop 50 Average Score: {avg_top_score}\nDeaths by Random Move: {random_deaths}\nWeighted Score: {weighted_score}{Style.RESET_ALL}")
+    
     graph.plot()
 
-    #return average_score
-    return (0.7 * avg_top_score) + (0.3 * max_score)  # FIXME: OPTUNA
+    #return (0.7 * avg_top_score) + (0.3 * max_score)  # FIXME: OPTUNA
 
 
 """OPTUNA HYPERPARAMETER TRAINING"""
@@ -293,14 +300,19 @@ def optimize():
 # {'learning_rate': 0.00045978908864575236, 'gamma': 0.9939136048282744, 'epsilon_decay': 144, 'batch_size': 64, 'tau': 0.002015749479720252}
 
 def main():
-    optimize()  # FIXME: OPTUNA Uncomment to run hyperparameter optimization
-    #best_params = {'learning_rate': 0.000797245534518093, 'gamma': 0.9902602313193359, 'epsilon_start': 0.9940711467016862, 'epsilon_end': 0.001, 'epsilon_decay': 178}
-    #best_batch_size = 256
-    #best_tau = 0.03594331487851593
-    #dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    #agent = Agent(**best_params, device=dev)
-    #train(agent, 2000, 128)
-    #train(agent, 2000, batch_size=best_batch_size, tau=best_tau)
+    #optimize()  # FIXME: OPTUNA Uncomment to run hyperparameter optimization
+    best_params = {'learning_rate': 0.000102248605253763, 'gamma': 0.975624424100652, 'w_decay': 0.00940121113083092, 'epsilon_start': 0.9940711467016862, 'epsilon_end': 0.0001, 'epsilon_decay': 90}
+    best_batch_size = 128
+    best_tau = 0.00781269243820524
+
+    if torch.cuda.is_available():
+        dev = torch.device("cuda")
+        torch.cuda.empty_cache()
+    else:
+        dev = torch.device("cpu")
+
+    agent = Agent(**best_params, device=dev)
+    train(agent, 2000, batch_size=best_batch_size, tau=best_tau)
 
 
 if __name__ == "__main__":
