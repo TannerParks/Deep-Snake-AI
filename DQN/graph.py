@@ -24,7 +24,7 @@ class Graph:
         plt.title('DQN Snake Performance')
         plt.xlabel('Episode')
         plt.ylabel('Score')
-        plt.ylim(ymin=0)
+        plt.ylim(ymin=0, ymax=(max(self.scores) + 10))
         plt.legend()
         plt.show()
 

@@ -86,7 +86,19 @@ class Trainer:
         
         # Calculate the target Q values and make terminal states' Q values 0
         target_q_values = torch.zeros(batch_size, device=self.device)
-        target_q_values[non_final_mask] = self.target_model(non_final_next_states).max(1)[0].detach()
+        
+        # Double DQN: Use the policy model to select the best action in the next state, then use the target model to evaluate that action
+        if non_final_next_states.size(0) > 0:
+            with torch.no_grad():
+                # Choose the action with the highest Q-value from the policy model
+                q_next_policy = self.policy_model(non_final_next_states)
+                next_actions_indices = q_next_policy.argmax(dim=1, keepdim=True)
+
+                # Judge the Q-value of that action using the target model
+                q_next_target_all = self.target_model(non_final_next_states)
+                q_next_target = q_next_target_all.gather(1, next_actions_indices).squeeze(1)
+            
+            target_q_values[non_final_mask] = q_next_target
 
         # Calculate the loss between the current Q-values and the expected Q-values
         expected_q_values = rewards + self.gamma * target_q_values
@@ -95,4 +107,5 @@ class Trainer:
         # Optimize the model by updating its weights using backpropagation and gradient descent
         self.optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.policy_model.parameters(), max_norm=5.0)
         self.optimizer.step()

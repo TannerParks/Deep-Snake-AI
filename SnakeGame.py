@@ -254,7 +254,7 @@ class Game:
         self.score = 0
         self.frame_iteration = 0
         self.games_played += 1
-        pygame.display.set_caption(f"Snake Game Hyperparameters2 {self.games_played}      {self.log_file}")
+        pygame.display.set_caption(f"Snake Game {self.games_played}      {self.log_file}")
         self.recent_fruit_times.clear()
         self.dynamic_timeout = 250
         self.running = True
