@@ -1283,11 +1283,11 @@ class Game:
             fruit_reward = 100 + min(100, 0.25 * self.snake.length)
             fruit_reward *= fruit_accessibility_bonus
 
-            if self.prev_accessible_area is not None and current_accessible_area < self.prev_accessible_area and abs(self.prev_accessible_area - current_accessible_area) > 2:
-                # Risk bonus for partition causing fruits
-                risk_bonus = min(25, 0.05 * self.snake.length)
-                fruit_reward += risk_bonus
-                self.debug_info['Reward Partition Risk'] = risk_bonus
+            #if self.prev_accessible_area is not None and current_accessible_area < self.prev_accessible_area and abs(self.prev_accessible_area - current_accessible_area) > 2:
+            #    # Risk bonus for partition causing fruits
+            #    risk_bonus = min(25, 0.05 * self.snake.length)
+            #    fruit_reward += risk_bonus
+            #    self.debug_info['Reward Partition Risk'] = risk_bonus
 
             reward += fruit_reward
             self.process_ate_fruit()
@@ -1311,16 +1311,16 @@ class Game:
 
         distance_reward = 0
 
-        if current_dist_to_fruit > self.prev_dist_to_fruit and access_to_fruit:
-            distance_reward = -1 / (1 + 0.01 * self.snake.length)
-        elif current_dist_to_fruit < self.prev_dist_to_fruit and access_to_fruit:
-            distance_reward = 1 / (1 + 0.01 * self.snake.length)
+        #if current_dist_to_fruit > self.prev_dist_to_fruit and access_to_fruit:
+        #    distance_reward = -1 / (1 + 0.01 * self.snake.length)
+        #elif current_dist_to_fruit < self.prev_dist_to_fruit and access_to_fruit:
+        #    distance_reward = 1 / (1 + 0.01 * self.snake.length)
 
-        if has_escape:
-            distance_reward *= 2
+        #if has_escape:
+        #    distance_reward *= 2
 
-        reward += distance_reward
-        self.debug_info['Reward Distance'] = distance_reward
+        #reward += distance_reward
+        #self.debug_info['Reward Distance'] = distance_reward
 
         # --- Space Management Rewards/Penalties ---
         space_reward, in_tight_space = self.get_space_management_reward1(current_accessible_area)
@@ -1512,12 +1512,12 @@ class Game:
 
         if took_too_long:
             timeout_penalty = -(1 + 0.002 * over_time)
-            if self.snake.length <= 10 or self.tail_distance <= 3:      # TODO: TESTING
+            if self.snake.length <= 10 or self.tail_distance <= 3:
                 timeout_penalty *= 2
             reward += timeout_penalty
 
             # Force a game over if way past limit
-            if over_time > 500:
+            if over_time > 1000:
                 #print(f"Overtime exceeded!\t\tFrame Iteration: {self.frame_iteration}\t\tDynamic Timeout: {self.dynamic_timeout}, Length: {self.snake.length}, Score: {self.score}, Reward: {reward}")
                 timeout_terminal_penalty = -130 * (1 + normalized_snake_length)
                 reward = timeout_terminal_penalty  # TODO: Overwrite reward with terminal penalty? (like collision)

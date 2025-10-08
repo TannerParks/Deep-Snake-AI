@@ -107,5 +107,5 @@ class Trainer:
         # Optimize the model by updating its weights using backpropagation and gradient descent
         self.optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.policy_model.parameters(), max_norm=5.0)
+        torch.nn.utils.clip_grad_norm_(self.policy_model.parameters(), max_norm=10.0)
         self.optimizer.step()
