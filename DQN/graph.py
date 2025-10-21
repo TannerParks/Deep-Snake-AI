@@ -27,6 +27,26 @@ class Graph:
         plt.ylim(ymin=0, ymax=(max(self.scores) + 10))
         plt.legend()
         plt.show()
+    
+    def plot_grad_norms(self, grad_norms):
+        plt.figure(figsize=(10, 5))
+        plt.plot(range(1, len(grad_norms) + 1), grad_norms, label='Gradient Norm', color='green')
+        plt.title('Gradient Norms Over Time')
+        plt.xlabel('Game Number')
+        plt.ylabel('Gradient Norm')
+        plt.ylim(ymin=0)
+        plt.legend()
+        plt.show()
+    
+    def plot_td_errors(self, td_errors):
+        plt.figure(figsize=(10, 5))
+        plt.plot(range(1, len(td_errors) + 1), td_errors, label='TD Error', color='orange')
+        plt.title('TD Errors Over Time')
+        plt.xlabel('Game Number')
+        plt.ylabel('TD Error')
+        plt.ylim(ymin=0)
+        plt.legend()
+        plt.show()
 
 if __name__ == "__main__":
     graph = Graph()

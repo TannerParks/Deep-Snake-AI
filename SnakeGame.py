@@ -1283,12 +1283,6 @@ class Game:
             fruit_reward = 100 + min(100, 0.25 * self.snake.length)
             fruit_reward *= fruit_accessibility_bonus
 
-            #if self.prev_accessible_area is not None and current_accessible_area < self.prev_accessible_area and abs(self.prev_accessible_area - current_accessible_area) > 2:
-            #    # Risk bonus for partition causing fruits
-            #    risk_bonus = min(25, 0.05 * self.snake.length)
-            #    fruit_reward += risk_bonus
-            #    self.debug_info['Reward Partition Risk'] = risk_bonus
-
             reward += fruit_reward
             self.process_ate_fruit()
 
@@ -1302,25 +1296,11 @@ class Game:
 
         self.debug_info['Reward Fruit'] = fruit_reward
 
-        # --- Distance Reward ---
-        # Reward the AI for getting closer to the fruit
+        # Get information about the current situation
         current_dist_to_fruit = self.check_distance_to_fruit()
         current_tail_reachable = any(self.directional_tail_reachability.values())
         access_to_fruit = any(self.directional_fruit_reachability.values())
         has_escape = any(self.directional_escape_exists.values()) or current_tail_reachable
-
-        distance_reward = 0
-
-        #if current_dist_to_fruit > self.prev_dist_to_fruit and access_to_fruit:
-        #    distance_reward = -1 / (1 + 0.01 * self.snake.length)
-        #elif current_dist_to_fruit < self.prev_dist_to_fruit and access_to_fruit:
-        #    distance_reward = 1 / (1 + 0.01 * self.snake.length)
-
-        #if has_escape:
-        #    distance_reward *= 2
-
-        #reward += distance_reward
-        #self.debug_info['Reward Distance'] = distance_reward
 
         # --- Space Management Rewards/Penalties ---
         space_reward, in_tight_space = self.get_space_management_reward1(current_accessible_area)

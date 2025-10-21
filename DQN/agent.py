@@ -135,6 +135,10 @@ def train(agent, num_games, batch_size, tau=0.001, trial=None):
     rewards = []  # Keep track of the reward earned in each game
     scores = []  # Keep track of the score earned in each game
     max_score = 0  # Track the highest score achieved in this training session
+    total_norm = 0.0  # Initialize total_norm to avoid reference before assignment
+    td_error_mean = 0.0  # Initialize td_error_mean to avoid reference before assignment
+    td_error_log = []   # Track TD errors for analysis
+    total_norm_log = []  # Track gradient norms for analysis
 
     random_deaths = 0
 
@@ -169,7 +173,10 @@ def train(agent, num_games, batch_size, tau=0.001, trial=None):
 
             # Start training the agent if the memory has enough transitions
             if len(memory) >= batch_size:
-                agent.trainer.optimize(memory, batch_size)
+                total_norm, td_error_mean = agent.trainer.optimize(memory, batch_size)
+            
+            total_norm_log.append(total_norm)
+            td_error_log.append(td_error_mean)
 
             agent.trainer.soft_update_target(tau)
 
@@ -193,6 +200,11 @@ def train(agent, num_games, batch_size, tau=0.001, trial=None):
             best_scores = sorted(scores, reverse=True)[:50]  # FIXME: OPTUNA - Take top 50 best scores
             avg_top_score = np.mean(best_scores)  # FIXME: OPTUNA
             weighted_score = (0.7 * avg_top_score) + (0.3 * max_score)
+            tenth_percentile_score = np.percentile(scores[-100:], 10)
+            nintyth_percentile_score = np.percentile(scores[-100:], 90)
+            percent_less_than_50 = sum(s < 50 for s in scores[-100:]) / len(scores[-100:]) * 100
+            median_score = np.median(scores[-100:])
+            score_std = np.std(scores[-100:])
 
             if trial is not None:
                 print(
@@ -205,7 +217,7 @@ def train(agent, num_games, batch_size, tau=0.001, trial=None):
                         f"{Back.RED}{Fore.BLACK}{Style.BRIGHT}[Optuna] Trial pruned at step {i_game} (Max Score: {max_score}, Mean Last 100: {mean_score}, Max Last 100: {max(scores[-100:])}, Top 50 Mean: {avg_top_score}, Weighted Score: {weighted_score}, Reward: {game_reward}){Style.RESET_ALL}")
                     raise optuna.TrialPruned()
             else:
-                print(f"{Back.LIGHTGREEN_EX}{Fore.BLACK}{Style.BRIGHT}[Step Report] Step: {i_game}, Max Score: {max_score}, Mean Last 100: {mean_score}, Max Last 100: {max(scores[-100:])}, Top 50 Mean: {avg_top_score}, Weighted Score: {weighted_score}, Reward: {game_reward}{Style.RESET_ALL}")
+                print(f"{Back.LIGHTGREEN_EX}{Fore.BLACK}{Style.BRIGHT}[Step Report] Step: {i_game}, Max Score: {max_score}, Mean Last 100: {mean_score}, Median Last 100: {median_score}, Max Last 100: {max(scores[-100:])}, Top 50 Mean: {avg_top_score}, Weighted Score: {weighted_score}, 10th Percentile: {tenth_percentile_score}, 90th Percentile: {nintyth_percentile_score}, Std Dev: {score_std}, % < 50: {percent_less_than_50}%{Style.RESET_ALL}")
 
     agent.policy_net.save("DQN/models/policy_model.pth")  # FIXME: Comment out for Optuna trials
     
@@ -213,11 +225,18 @@ def train(agent, num_games, batch_size, tau=0.001, trial=None):
     best_scores = sorted(scores, reverse=True)[:50]  # FIXME: OPTUNA - Take top 50 best scores
     avg_top_score = np.mean(best_scores)  # FIXME: OPTUNA
     weighted_score = (0.7 * avg_top_score) + (0.3 * max_score)
+    tenth_percentile_score = np.percentile(scores, 10)
+    nintyth_percentile_score = np.percentile(scores, 90)
+    percent_less_than_50 = sum(s < 50 for s in scores[-100:]) / len(scores[-100:]) * 100
+    median_score = np.median(scores)
+    score_std = np.std(scores)
 
     # Print all values and calculations that would be helpful for evaluating the training session
-    print(f"{Back.MAGENTA}{Fore.BLACK}{Style.BRIGHT}Training completed over {num_games} games.\nHighest Score: {max_score}\nAverage Score: {average_score}\nTop 50 Average Score: {avg_top_score}\nDeaths by Random Move: {random_deaths}\nWeighted Score: {weighted_score}{Style.RESET_ALL}")
+    print(f"{Back.MAGENTA}{Fore.BLACK}{Style.BRIGHT}[FINAL STATS] Training completed over {num_games} games.\nHighest Score: {max_score}\nAverage Score: {average_score}\nTop 50 Average Score: {avg_top_score}\nWeighted Score: {weighted_score}\n10th Percentile: {tenth_percentile_score}\n90th Percentile: {nintyth_percentile_score}\nMedian Score: {median_score}\n% < 50: {percent_less_than_50}%\nStd Dev: {score_std}\nRandom Deaths: {random_deaths}{Style.RESET_ALL}")
     
     graph.plot()
+    graph.plot_grad_norms(total_norm_log)
+    # graph.plot_td_errors(td_error_log)
 
     #return (0.7 * avg_top_score) + (0.3 * max_score)  # FIXME: OPTUNA
 

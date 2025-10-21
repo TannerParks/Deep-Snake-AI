@@ -35,7 +35,9 @@ class Trainer:
         self.device = device
         self.gamma = gamma
         self.optimizer = torch.optim.AdamW(policy_model.parameters(), lr=learning_rate, weight_decay=w_decay)
-        self.criterion = nn.SmoothL1Loss(beta=20.0) # nn.MSELoss()
+        self.criterion = nn.SmoothL1Loss(beta=20.0)
+        self.frame_idx = 0
+        self.log_interval = 1000
 
     def update_target(self):
         """Update the target model with the current model's weights."""
@@ -104,8 +106,37 @@ class Trainer:
         expected_q_values = rewards + self.gamma * target_q_values
         loss = self.criterion(current_q_values, expected_q_values.unsqueeze(-1))
 
+        # TODO: For logging
+        td_error = expected_q_values - current_q_values
+
         # Optimize the model by updating its weights using backpropagation and gradient descent
         self.optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.policy_model.parameters(), max_norm=10.0)
+
+        # Log gradient norms and TD errors
+        td_error = td_error.detach().cpu()
+        total_norm = log_gradient_norms(self.policy_model)
+        td_error_mean = td_error.mean()
+
+        #if self.frame_idx % self.log_interval == 0:
+        #    print(f"[Optimization] Frame: {self.frame_idx}, Loss: {loss.item():.4f}, Grad Norm: {total_norm:.4f} {'(CLIPPED)' if total_norm > 10 else ''}, TD Error Mean: {td_error_mean:.4f}, TD Error Max: {td_error.max():.4f}, TD Error Min: {td_error.min():.4f}")
+        
+        #self.frame_idx += 1
+
+        torch.nn.utils.clip_grad_norm_(self.policy_model.parameters(), max_norm=20.0)
         self.optimizer.step()
+
+        return total_norm, td_error_mean    # TODO: For logging purposes in agent.py
+
+
+# --- LOGGING ---
+
+def log_gradient_norms(model):
+    total_norm = 0.0
+    for p in model.parameters():
+        if p.grad is not None:
+            param_norm = p.grad.data.norm(2)
+            total_norm += param_norm.item() ** 2
+    total_norm = total_norm ** 0.5
+
+    return total_norm
